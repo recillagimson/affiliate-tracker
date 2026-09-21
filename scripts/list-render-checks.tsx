@@ -1267,14 +1267,20 @@ console.log('\n— who a new link belongs to —');
   const toggle = (row: LeadRow) =>
     renderToStaticMarkup(<StatusToggle row={row} onToggle={() => {}} />);
   const nameOf = (markup: string) => /aria-label="([^"]+)"/.exec(markup)?.[1] ?? '';
+  // Approved is recorded with Approve, which asks what it paid; the pill
+  // never offers it.
   check(
-    'a pending lead offers approved',
-    nameOf(toggle(leadRow({}))) === `${statusLabel('pending')}, mark Priya Nair as ${approvedWord}`,
+    'a pending lead offers applied',
+    nameOf(toggle(leadRow({}))) === `${statusLabel('pending')}, mark Priya Nair as ${appliedWord}`,
   );
   check(
-    'so does an applied one',
-    nameOf(toggle(leadRow({ status: 'applied', card: 'Amex Gold' }))) ===
-      `${statusLabel('applied')}, mark Priya Nair as ${approvedWord}`,
+    'an applied lead with no card offers pending',
+    nameOf(toggle(leadRow({ status: 'applied' }))) ===
+      `${statusLabel('applied')}, mark Priya Nair as ${pendingWord}`,
+  );
+  check(
+    'an applied lead with a card is a pill with nothing to press',
+    !toggle(leadRow({ status: 'applied', card: 'Amex Gold' })).includes('<button'),
   );
   check(
     'an approved lead with a card goes back to applied',
@@ -1319,10 +1325,10 @@ console.log('\n— who a new link belongs to —');
   check('the admin note names all three states', threeWords.every((w) => adminNote.includes(w)));
   check('so does the affiliate note', threeWords.every((w) => affiliateNote.includes(w)));
   check('both say where the card is', adminNote.includes('Card column') && affiliateNote.includes('Card column'));
-  check('the admin is told the sheet sets it too', adminNote.includes('column N'));
+  check('the admin is told approving takes the card', adminNote.includes('Approve') && adminNote.includes('pick the card'));
   check(
     'an affiliate gets no recipe for a control they do not have',
-    !affiliateNote.includes('column N') && !affiliateNote.includes('Mark one'),
+    !affiliateNote.includes('Approve') && !affiliateNote.includes('pick the card'),
   );
   check(
     'an approval on file is explained when there is one',

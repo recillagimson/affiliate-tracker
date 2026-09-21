@@ -210,6 +210,24 @@ export function leadRefIn(notes: string): string {
 }
 
 /**
+ * `manual:k3m9x2q7hz04` — the marker on an approval an admin recorded with
+ * Approve on the leads list, in the place a synced one carries its qmp marker.
+ *
+ * It is what lets the sync find that approval again when QMP reports the real
+ * one, and swap it out (see planManualSwaps). An approval typed in through
+ * Record an approval carries no marker, names no lead, and is never swapped.
+ */
+export function manualMarker(id: string): string {
+  return `manual:${id}`;
+}
+
+const MANUAL_PATTERN = /\bmanual:([a-z0-9]+)/i;
+
+export function isManualApproval(notes: string): boolean {
+  return MANUAL_PATTERN.test(notes ?? '');
+}
+
+/**
  * The leads the approvals name.
  *
  * The reference is the submission's own id: the capture form puts it in var3,
@@ -334,12 +352,15 @@ const NOTE_SEPARATOR = /\s*·\s*/;
  * on a synced one: the marker is the proof the sync wrote the notes, and
  * without it the first words are whatever somebody typed. A synced approval
  * with no card starts with its marker, and gives nothing back.
+ *
+ * An approval recorded with Approve is written in the same shape with its own
+ * marker, from a card picked off the rate card, so it reads back the same way.
  */
 export function cardFromNotes(notes: string): string {
   const text = notes ?? '';
-  if (!markerIn(text)) return '';
+  if (!markerIn(text) && !isManualApproval(text)) return '';
   const first = (text.split(NOTE_SEPARATOR)[0] ?? '').trim();
-  if (MARKER_PATTERN.test(first) || LEAD_PATTERN.test(first)) return '';
+  if (MARKER_PATTERN.test(first) || MANUAL_PATTERN.test(first) || LEAD_PATTERN.test(first)) return '';
   return first;
 }
 
@@ -562,6 +583,7 @@ export async function writeLeadUpdates(
 export function visibleNotes(notes: string): string {
   return (notes ?? '')
     .replace(MARKER_PATTERN, '')
+    .replace(MANUAL_PATTERN, '')
     .replace(LEAD_PATTERN, '')
     // Separators left stranded by the removals: a trailing one, a leading one,
     // or two that have collapsed together.
@@ -869,4 +891,62 @@ export function planSync(options: {
     totalEarnings,
     unusable: false,
   };
+}
+
+/** A QMP approval about to be written, and the manual approval it meets. */
+export type ManualSwap = { marker: string; manualId: string };
+
+/**
+ * What the sync does with approvals an admin recorded by hand with Approve.
+ *
+ * When QMP reports the approval for a lead that already has a manual one, the
+ * two are the same approval. QMP's is the record: it carries what the merchant
+ * actually paid. So it `replace`s the manual one, which is deleted as QMP's is
+ * written, and the approval is counted once at the real amount.
+ *
+ * Unless the manual approval is on a live payout request. Then it has been
+ * asked for, or paid, at the amount it carries, and deleting it is refused
+ * anyway. It is `kept`, and the QMP approval is left unwritten rather than
+ * written beside it, which would pay the lead twice. Nothing marks QMP's as
+ * imported, so every later sync reaches the same answer.
+ *
+ * Matched on the lead reference, which only a row that carries var3 has.
+ * Among a lead's manual approvals the one for the same card goes first, as QMP
+ * spells it give or take case and spacing, then any: a card mis-picked by hand
+ * is still that lead's approval. Each manual approval meets one QMP approval
+ * at most, so a lead QMP approved twice over one hand-recorded approval gets
+ * the second written as new.
+ */
+export function planManualSwaps(options: {
+  create: PlannedConversion[];
+  existing: Conversion[];
+  /** Conversion ids on a live payout request. */
+  committed: ReadonlySet<string>;
+}): { replace: ManualSwap[]; kept: ManualSwap[] } {
+  const { create, existing, committed } = options;
+  const sameCard = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+  const byLead = new Map<string, Conversion[]>();
+  for (const conversion of existing) {
+    if (!isManualApproval(conversion.notes)) continue;
+    const ref = leadRefIn(conversion.notes);
+    if (!ref) continue;
+    byLead.set(ref, [...(byLead.get(ref) ?? []), conversion]);
+  }
+
+  const replace: ManualSwap[] = [];
+  const kept: ManualSwap[] = [];
+  for (const row of create) {
+    const candidates = row.leadRef ? byLead.get(row.leadRef) : undefined;
+    if (!candidates || candidates.length === 0) continue;
+    const match =
+      candidates.find((conversion) => sameCard(cardFromNotes(conversion.notes), row.card)) ?? candidates[0]!;
+    byLead.set(
+      row.leadRef,
+      candidates.filter((conversion) => conversion !== match),
+    );
+    const swap = { marker: row.marker, manualId: match.id };
+    (committed.has(match.id) ? kept : replace).push(swap);
+  }
+  return { replace, kept };
 }

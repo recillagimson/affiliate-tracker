@@ -6,7 +6,10 @@ import { EarningsChart } from '@/components/EarningsChart';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { LeadsPanel, type LeadRow } from '@/components/LeadsPanel';
 import { LinkPending } from '@/components/LinkPending';
+import { MonthFilter } from '@/components/MonthFilter';
+import { SalesStrip } from '@/components/SalesStrip';
 import {
+  activeMonths,
   buildEarnings,
   describeConversions,
   formatDateTime,
@@ -15,6 +18,8 @@ import {
   formatRelative,
   HOUSE_KEY,
   initialsOf,
+  monthLabel,
+  parseMonth,
   PERIODS,
   type Period,
 } from '@/lib/analytics';
@@ -23,6 +28,7 @@ import { loadAll } from '@/lib/load';
 import { approvedCards, approvedLeadIds, cardForLead } from '@/lib/qmp-sync';
 import { ownsKey } from '@/lib/scope';
 import { normalizeKey } from '@/lib/validate';
+import { loadApproveContext } from '@/lib/approve-context';
 import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -68,6 +74,8 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   const { usr: rawUsr } = await params;
   const query = await searchParams;
   const period = parsePeriod(firstValue(query.period));
+  // A calendar month, when one is picked. It outranks the period.
+  const month = parseMonth(firstValue(query.month));
   const usr = decodeUsr(rawUsr);
   const personKey = usr || HOUSE_KEY;
 
@@ -103,6 +111,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
 
   const view = buildEarnings(links, visits, conversions, {
     period,
+    month,
     usr: personKey,
     groupBy: 'card',
     ...money,
@@ -110,7 +119,16 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
 
   const person = everView.people.find((p) => p.usr === personKey);
   const name = person?.name ?? usr;
-  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? '30 days';
+  // As on the dashboard: "30 days" mid-sentence, "September 2026" as a name.
+  const periodLabel = month
+    ? monthLabel(month)
+    : (PERIODS.find((p) => p.key === period)?.label ?? '30 days');
+  const windowLabel = month ? periodLabel : periodLabel.toLowerCase();
+  // Only this person's months: a month they had nothing in is an empty page.
+  const months = activeMonths(
+    visits.filter((row) => (row.usr || HOUSE_KEY) === personKey),
+    conversions.filter((row) => (row.usr || HOUSE_KEY) === personKey),
+  ).map((key) => ({ key, label: monthLabel(key) }));
 
   // Leads are passed in so each approval can name the client behind it. They
   // are already scoped to this viewer, so an approval whose lead belongs to
@@ -140,6 +158,9 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   // Their cards, by the same reasoning: the one the sync wrote on the lead, or
   // for a lead approved before leads kept one, the cards its approvals name.
   const cardsApproved = approvedCards(conversions);
+  // Approve on the leads list, for an admin. See the dashboard.
+  const approving = isAdmin && theirLeads.length > 0 ? await loadApproveContext(settings.shares) : undefined;
+
   const leadRows: LeadRow[] = theirLeads.slice(0, RECENT_LEADS).map((row) => ({
     id: row.id,
     fullName: row.fullName,
@@ -171,7 +192,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   return (
     <div className="w-full">
       <Link
-        href={period === 'month' ? '/' : `/?period=${period}`}
+        href={month ? `/?month=${month}` : period === 'month' ? '/' : `/?period=${period}`}
         className="btn-quiet btn-sm"
       >
         {isAdmin ? '← Back to all people' : '← Back to your dashboard'}
@@ -206,8 +227,8 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
                   : `/affiliate/${encodeURIComponent(personKey)}?period=${option.key}`
               }
               className="pill-filter relative"
-              data-active={option.key === period}
-              aria-current={option.key === period ? 'page' : undefined}
+              data-active={!month && option.key === period}
+              aria-current={!month && option.key === period ? 'page' : undefined}
             >
               {option.label}
               {/* Same page, different query string: no route change, so no
@@ -215,6 +236,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
               <LinkPending />
             </Link>
           ))}
+          <MonthFilter months={months} value={month} />
         </nav>
       </div>
 
@@ -227,7 +249,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
             {usr
               ? `${name.split(' ')[0]}'s ${gross ? 'earnings' : 'affiliate revenue'}`
               : `House ${gross ? 'earnings' : 'affiliate revenue'}`}{' '}
-            · {periodLabel.toLowerCase()}
+            · {windowLabel}
           </h2>
           {/* See the dashboard hero: clamped so a long total cannot widen the page. */}
           <p className="tnum mt-4 leading-[0.95] text-[28px]">
@@ -252,6 +274,8 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
 
         <EarningsChart series={view.series} />
       </section>
+
+      <SalesStrip totals={view.totals} gross={gross} windowLabel={windowLabel} />
 
       {/* Per card — the reason this page exists. Cards rather than a table:
           three or four numbers per row reads better stacked than columned. */}
@@ -349,6 +373,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
           title={usr ? `${name}'s leads` : 'House leads'}
           summary={leadSummary}
           showAssignee={false}
+          approving={approving}
           emptyBody={
             usr
               ? `Nobody has filled in the form on ${name}'s links yet.`

@@ -7,21 +7,26 @@ import { EmptyState } from '@/components/EmptyState';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { LeadsPanel, type LeadRow } from '@/components/LeadsPanel';
 import { LinkPending } from '@/components/LinkPending';
+import { MonthFilter } from '@/components/MonthFilter';
 import { PersonFilter } from '@/components/PersonFilter';
+import { SalesStrip } from '@/components/SalesStrip';
 import {
+  activeMonths,
   affiliateHref,
   buildEarnings,
   describeConversions,
   formatDateTime,
   formatMoney,
-  formatPercent,
   formatRelative,
+  monthLabel,
+  parseMonth,
   PERIODS,
   type Period,
 } from '@/lib/analytics';
 import { captureFormEnabled } from '@/lib/config';
 import { loadAll } from '@/lib/load';
 import { approvedCards, approvedLeadIds, cardForLead } from '@/lib/qmp-sync';
+import { loadApproveContext } from '@/lib/approve-context';
 import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -52,6 +57,8 @@ function parsePeriod(raw: string): Period {
 export default async function DashboardPage({ searchParams }: PageProps) {
   const query = await searchParams;
   const period = parsePeriod(firstValue(query.period));
+  // A calendar month, when one is picked. It outranks the period.
+  const month = parseMonth(firstValue(query.month));
   const capture = captureFormEnabled();
 
   const viewer = await requireViewer();
@@ -76,10 +83,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
    * this page's history alone.
    */
   const money = { shares: settings.shares, gross };
-  const earningsAll = buildEarnings(links, visits, conversions, { period, ...money });
+  const earningsAll = buildEarnings(links, visits, conversions, { period, month, ...money });
   const usr = earningsAll.people.some((p) => p.usr === requestedUsr) ? requestedUsr : '';
   const view = usr
-    ? buildEarnings(links, visits, conversions, { period, usr, ...money })
+    ? buildEarnings(links, visits, conversions, { period, month, usr, ...money })
     : earningsAll;
 
   const hasAnything = links.length > 0 || visits.length > 0 || conversions.length > 0;
@@ -106,7 +113,11 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     );
   }
 
-  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? '30 days';
+  // "30 days" reads in lower case mid-sentence; "September 2026" is a name.
+  const windowLabel = month
+    ? monthLabel(month)
+    : (PERIODS.find((p) => p.key === period)?.label ?? '30 days').toLowerCase();
+  const months = activeMonths(visits, conversions).map((key) => ({ key, label: monthLabel(key) }));
   const person = view.people.find((p) => p.usr === usr);
 
   // One option per link, newest first — an approval is recorded against the link
@@ -138,6 +149,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // before leads kept a card has it only on its approvals, read from the same
   // whole set for the same reason.
   const cardsApproved = approvedCards(conversions);
+
+  // Approve on the leads list, for an admin: the rate card to pick the card
+  // from and the commission history to show the affiliate's share.
+  const approving = isAdmin && capture ? await loadApproveContext(settings.shares) : undefined;
 
   const leadRows: LeadRow[] = capture
     ? submissions.slice(0, RECENT_LIMIT).map((row) => ({
@@ -175,8 +190,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               href={search ? `/?${search}` : '/'}
               /* relative, so the pending overlay can sit on top of the pill. */
               className="pill-filter relative"
-              data-active={option.key === period}
-              aria-current={option.key === period ? 'page' : undefined}
+              data-active={!month && option.key === period}
+              aria-current={!month && option.key === period ? 'page' : undefined}
             >
               {option.label}
               {/* Only the query string changes here, so this page is never
@@ -187,6 +202,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             </Link>
           );
         })}
+        <MonthFilter months={months} value={month} />
         {/* One person cannot be filtered down to one person. */}
         {isAdmin ? (
           <>
@@ -203,7 +219,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               "earnings" would be naming a figure that is not on the page. */}
           <h2 className="label-cap">
             {gross ? (person ? `${person.name}'s earnings` : 'Total earnings') : 'Your affiliate revenue'}{' '}
-            · {periodLabel.toLowerCase()}
+            · {windowLabel}
           </h2>
           {/* Clamped, not stepped: a money figure is one unbreakable token, so
               the type has to scale with the box or a seven-figure total pushes
@@ -227,7 +243,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           </p>
 
           <Link
-            href={usr ? affiliateHref(usr, period) : '#who-is-earning'}
+            href={usr ? affiliateHref(usr, period, month) : '#who-is-earning'}
             className="btn-outline btn-sm mt-6"
           >
             {usr && person ? `See ${person.name}'s cards` : 'See where it came from'}
@@ -244,41 +260,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         the eye to start again at every gap. Each still says in words what it
         counts.
       */}
-      <section className="rise panel mt-5 grid grid-cols-1 sm:grid-cols-3">
-        <Kpi
-          label="Visits"
-          value={view.totals.visits.toLocaleString()}
-          unit={`in ${periodLabel.toLowerCase()}`}
-          plain="People who opened one of your links."
-        />
-        <Kpi
-          label="Approved"
-          value={view.totals.approved.toLocaleString()}
-          unit={
-            view.totals.visits > 0
-              ? `${formatPercent(view.totals.approvalRate, 1)} of ${view.totals.visits.toLocaleString()} visits`
-              : 'no visits yet'
-          }
-          plain="Visits the merchant agreed to pay for."
-          delay={40}
-        />
-        <Kpi
-          label="Per approval"
-          last
-          value={
-            view.totals.approved > 0
-              ? formatMoney(view.totals.earnings / view.totals.approved)
-              : 'None yet'
-          }
-          unit=""
-          plain={
-            gross
-              ? 'Average payout each time one is approved.'
-              : 'Your average revenue each time one is approved.'
-          }
-          delay={80}
-        />
-      </section>
+      <SalesStrip totals={view.totals} gross={gross} windowLabel={windowLabel} />
 
       {/* The table */}
       <section id="who-is-earning" className="rise panel mt-5 p-6 sm:p-8">
@@ -286,7 +268,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           <h2 className="font-display text-[18px]">Who is earning</h2>
           <span className="text-[13px] text-ink-soft">
             {view.rows.length} {view.rows.length === 1 ? 'person' : 'people'} ·{' '}
-            {periodLabel.toLowerCase()}
+            {windowLabel}
           </span>
         </div>
         <p className="plain mt-2">
@@ -298,7 +280,13 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             Nothing in this window. Try a longer period{usr ? ' or everyone' : ''}.
           </p>
         ) : (
-          <EarnersTable rows={view.rows} totals={view.totals} period={period} gross={gross} />
+          <EarnersTable
+            rows={view.rows}
+            totals={view.totals}
+            period={period}
+            month={month}
+            gross={gross}
+          />
         )}
       </section>
 
@@ -333,46 +321,14 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
       {/* Lead capture, only while the form is switched on */}
       {capture ? (
-        <LeadsPanel rows={leadRows} total={submissions.length} canEdit={isAdmin} />
+        <LeadsPanel
+          rows={leadRows}
+          total={submissions.length}
+          canEdit={isAdmin}
+          approving={approving}
+        />
       ) : null}
     </div>
   );
 }
 
-/**
- * One cell of the figures strip.
- *
- * The rule between cells is on the cell rather than the container so it can
- * change direction: stacked on a phone the divider has to run underneath, and a
- * container-level rule cannot know that. `last` drops it, because a trailing
- * divider on the last cell doubles the panel's own border.
- */
-function Kpi({
-  label,
-  value,
-  unit,
-  plain,
-  last = false,
-  delay = 0,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  plain: string;
-  last?: boolean;
-  delay?: number;
-}) {
-  return (
-    <div
-      className={`px-5 py-4 ${last ? '' : 'border-b border-edge-soft sm:border-b-0 sm:border-r'}`}
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <h3 className="label-cap text-[10px]">{label}</h3>
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="tnum text-[28px] font-medium leading-none tracking-[-0.02em]">{value}</span>
-        {unit ? <span className="text-[12px] text-ink-dim">{unit}</span> : null}
-      </div>
-      <p className="mt-1 text-[12px] text-ink-dim">{plain}</p>
-    </div>
-  );
-}

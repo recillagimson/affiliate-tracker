@@ -108,7 +108,11 @@ export const submissionInputSchema = z.object({
  * ignored rather than saved.
  */
 export const submissionPatchSchema = z.object({
-  status: z.enum(LEAD_STATUSES),
+  // Not approved: that is recorded with an approval behind it, through
+  // /api/leads/[id]/approve, so a lead never reads approved with nobody paid.
+  status: z.enum(LEAD_STATUSES).refine((status) => status !== 'registered', {
+    message: 'Approve the lead with its card instead.',
+  }),
 });
 
 /**
@@ -163,6 +167,29 @@ export const conversionInputSchema = z.object({
     .default(0),
   approvedOn: isoDateSchema,
   notes: z.string().trim().max(300).optional().default(''),
+});
+
+/**
+ * Approving a lead by hand, from the leads list.
+ *
+ * No slug or usr: the lead supplies both, so an approval cannot be filed under
+ * somebody other than the person whose link the lead came through. The card
+ * goes first in the approval's notes, where the sync reads it back from, so it
+ * may not carry the separator or a machine tag that would make a hand-recorded
+ * approval pass for one the sync imported.
+ */
+export const manualApprovalSchema = z.object({
+  card: z
+    .string()
+    .trim()
+    .min(1, 'Pick the card they were approved for')
+    .max(200, 'That card name is too long')
+    .refine((card) => !/·|\b(qmp|manual|lead):/i.test(card), 'That is not a card name'),
+  amount: z.coerce
+    .number({ invalid_type_error: 'Enter an amount' })
+    .min(0, 'Amount cannot be negative')
+    .max(1_000_000, 'That amount looks wrong'),
+  approvedOn: isoDateSchema,
 });
 
 export const visitInputSchema = z.object({

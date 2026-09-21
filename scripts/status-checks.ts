@@ -258,20 +258,30 @@ check('applied is behind approved', statusRank('applied') < statusRank('register
 check('the ranks follow the funnel', LEAD_STATUSES.map(statusRank), [0, 1, 2]);
 
 console.log('\n— where the admin toggle takes a lead —');
+/*
+ * The toggle no longer marks a lead approved. An approval is money, and money
+ * is recorded with Approve, which asks which card and what it paid. The pill
+ * moves a lead between the two states that cost nothing.
+ */
 check(
-  'a pending lead is marked approved',
+  'a pending lead is marked applied',
   nextManualStatus({ status: 'pending', card: '' }),
-  'registered',
+  'applied',
 );
 check(
-  'an applied lead is marked approved',
+  'an applied lead with no card goes back to pending',
+  nextManualStatus({ status: 'applied', card: '' }),
+  'pending',
+);
+check(
+  'an applied lead with a card on record has nowhere to go',
   nextManualStatus({ status: 'applied', card: 'Chase Sapphire Preferred' }),
-  'registered',
+  null,
 );
 /*
- * Taking an approval back returns the lead to where the evidence leaves it.
- * A card on record means the merchant did see an application, so pending
- * would contradict the card shown next to it.
+ * A lead marked approved by hand before Approve existed, with no approval
+ * behind it, can still be taken back. It returns to where the evidence leaves
+ * it: applied when a card is on record, pending when nothing is.
  */
 check(
   'un-approving a lead with a card on record leaves it applied',
@@ -294,6 +304,11 @@ check(
   'applied is a status the toggle may send',
   submissionPatchSchema.safeParse({ status: 'applied' }).success,
   true,
+);
+check(
+  'approved is not something the toggle may send: that takes an approval',
+  submissionPatchSchema.safeParse({ status: 'registered' }).success,
+  false,
 );
 check(
   'the on-screen word is not a stored status, so it is refused',

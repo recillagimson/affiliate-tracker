@@ -4,13 +4,15 @@ import {
   applicationsByLead,
   leadUpdateKind,
   leadUpdates,
+  planManualSwaps,
   planSync,
   writeLeadUpdates,
   type LeadUpdate,
   type LeadUpdateKind,
 } from '@/lib/qmp-sync';
 import { clientIndex, nameIndex, UNKNOWN_CLIENT } from '@/lib/analytics';
-import { getStore, statusForError } from '@/lib/store';
+import { listCommittedConversionIds, payoutsEnabled } from '@/lib/payout-request-store';
+import { getStore, statusForError, StoreNotFoundError } from '@/lib/store';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
 /**
@@ -30,6 +32,11 @@ import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
  * The leads come along after the money. One the report shows applying moves to
  * applied, one an approval names moves to approved, and each gets the card it
  * applied for. The rules are leadUpdates' in lib/qmp-sync.
+ *
+ * An approval an admin recorded by hand with Approve is swapped for QMP's when
+ * the report brings it: QMP's is written and the manual one deleted, so it is
+ * counted once, at what the merchant paid. One already on a payout request is
+ * kept, and QMP's is not written. The rules are planManualSwaps'.
  */
 
 export const dynamic = 'force-dynamic';
@@ -88,14 +95,18 @@ export async function POST(request: Request) {
   let links;
   let existing;
   let submissions;
+  let committed: Set<string>;
   try {
-    [links, existing, submissions] = await Promise.all([
+    [links, existing, submissions, committed] = await Promise.all([
       store.listLinks(),
       store.listConversions(),
       // Two jobs: a name beside each planned row, and the leads the report and
       // the approvals move along. Nothing about which approvals get written
       // depends on either.
       store.listSubmissions(),
+      // Which approvals a payout request holds, so a manual one that has been
+      // asked for is not swapped out from under it. No database, no requests.
+      payoutsEnabled() ? listCommittedConversionIds() : Promise.resolve(new Set<string>()),
     ]);
   } catch (error) {
     return NextResponse.json(
@@ -112,6 +123,13 @@ export async function POST(request: Request) {
     defaultSlug: (process.env.QMP_DEFAULT_SLUG || '').trim(),
   });
 
+  // What is actually written: the plan less every approval a manual one on a
+  // payout request already stands for.
+  const swaps = planManualSwaps({ create: plan.create, existing, committed });
+  const keptMarkers = new Set(swaps.kept.map((swap) => swap.marker));
+  const replacing = new Map(swaps.replace.map((swap) => [swap.marker, swap.manualId]));
+  const toWrite = plan.create.filter((row) => !keptMarkers.has(row.marker));
+
   /*
    * What the report and the approvals say about the leads behind them.
    *
@@ -124,7 +142,7 @@ export async function POST(request: Request) {
    * money; applicationsByLead says what that trust covers and what it cannot.
    */
   const applications = applicationsByLead(report.table.rows);
-  const updates = leadUpdates({ conversions: [...existing, ...plan.create], applications, submissions });
+  const updates = leadUpdates({ conversions: [...existing, ...toWrite], applications, submissions });
   const planned = countKinds(updates);
 
   const summary = {
@@ -132,10 +150,14 @@ export async function POST(request: Request) {
     rowsWithApprovals: plan.rowsWithApprovals,
     totalApprovals: plan.totalApprovals,
     totalEarnings: plan.totalEarnings,
-    toCreate: plan.create.length,
+    toCreate: toWrite.length,
     // Money about to be written, which is the number worth reading twice.
-    amountToCreate: Math.round(plan.create.reduce((sum, row) => sum + row.amount, 0) * 100) / 100,
+    amountToCreate: Math.round(toWrite.reduce((sum, row) => sum + row.amount, 0) * 100) / 100,
     alreadyImported: plan.skipped,
+    /** Approvals recorded by hand that QMP's own replace. */
+    manualToReplace: swaps.replace.length,
+    /** QMP approvals not written because a manual one on a payout request stands for them. */
+    manualKept: swaps.kept.length,
     issues: plan.issues,
     unusable: plan.unusable,
     shape: report.table.shape,
@@ -161,8 +183,9 @@ export async function POST(request: Request) {
       // written — and a dash where var3 names nobody is a normal state rather
       // than a reason to hold the row back. A key with no name behind it falls
       // back to the key: better a code you can look up than a blank.
-      preview: plan.create.slice(0, 25).map((row) => ({
+      preview: toWrite.slice(0, 25).map((row) => ({
         ...row,
+        replacesManual: replacing.has(row.marker),
         person: names.get(row.usr) ?? row.usr,
         client: clients.get(row.leadRef) ?? UNKNOWN_CLIENT,
       })),
@@ -172,9 +195,26 @@ export async function POST(request: Request) {
   // Written one at a time on purpose. The Sheets adapter appends, and firing
   // these concurrently is how two rows end up on the same line.
   let created = 0;
+  let replaced = 0;
   const failures: string[] = [];
-  for (const row of plan.create) {
+  for (const row of toWrite) {
     try {
+      /*
+       * The manual approval goes first. If writing QMP's then fails, the lead
+       * is short an approval until the next sync writes it, which it will,
+       * since nothing marks it imported. The other order would leave both on
+       * file after a failed delete, and the next sync would skip QMP's as
+       * imported and never come back for the manual one: paid twice, quietly.
+       */
+      const manualId = replacing.get(row.marker);
+      if (manualId) {
+        try {
+          await store.deleteConversion(manualId);
+        } catch (error) {
+          // Already gone, removed by hand since the plan was read: nothing to swap.
+          if (!(error instanceof StoreNotFoundError)) throw error;
+        }
+      }
       await store.addConversion({
         slug: row.slug,
         usr: row.usr,
@@ -183,6 +223,7 @@ export async function POST(request: Request) {
         notes: row.notes,
       });
       created += 1;
+      if (manualId) replaced += 1;
     } catch (error) {
       failures.push(
         `${row.approvedOn} ${row.slug}: ${error instanceof Error ? error.message : 'failed'}`,
@@ -212,10 +253,10 @@ export async function POST(request: Request) {
    * once rather than once per lead: see writeLeadUpdates.
    */
   const landed =
-    created === plan.create.length
+    created === toWrite.length
       ? updates
       : leadUpdates({
-          conversions: [...existing, ...plan.create.slice(0, created)],
+          conversions: [...existing, ...toWrite.slice(0, created)],
           applications,
           submissions,
         });
@@ -228,6 +269,7 @@ export async function POST(request: Request) {
     applied: true,
     ...summary,
     created,
+    replaced,
     failures,
     leadsMarked: leads.written.registered,
     leadsApplied: leads.written.applied,

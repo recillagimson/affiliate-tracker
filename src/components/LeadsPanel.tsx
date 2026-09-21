@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { ApproveLead, type ApproveContext } from './ApproveLead';
 import { Pager } from './Pager';
 import { TableScroller } from './TableScroller';
 import { isLeadId } from '@/lib/lead-id';
@@ -116,6 +117,9 @@ export function withShownStatus(rows: LeadRow[], changed: Record<string, LeadSta
  * them regardless, and has to, because nothing stops someone calling it
  * directly.
  *
+ * `approving` is what Approve needs: the rate card and the commission history.
+ * Without it, which is how an affiliate gets the panel, there is no Approve.
+ *
  * The wording is overridable because this panel appears in two places that mean
  * different things by it: everyone's leads on the dashboard, and one person's
  * on their own page. Same rows, same controls, different sentence — which is
@@ -129,6 +133,7 @@ export function LeadsPanel({
   summary,
   emptyBody = 'No leads captured yet. Share a link and they will appear here.',
   showAssignee = true,
+  approving,
 }: {
   rows: LeadRow[];
   total: number;
@@ -143,6 +148,8 @@ export function LeadsPanel({
    * the reader arrived with.
    */
   showAssignee?: boolean;
+  /** Given to an admin only. See ApproveLead. */
+  approving?: ApproveContext;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -151,6 +158,9 @@ export function LeadsPanel({
   const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
   const [error, setError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  /** The lead whose approve form is open, one at a time. */
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [approvedNote, setApprovedNote] = useState('');
 
   /**
    * Statuses this session has changed, applied over whatever the server last
@@ -206,6 +216,25 @@ export function LeadsPanel({
       : showAssignee || showRef
         ? 'min-w-[1160px]'
         : 'min-w-[1020px]';
+
+  const columns = 6 + (showAssignee ? 1 : 0) + (showRef ? 1 : 0);
+
+  /*
+   * Approve is offered where it can land: an admin, a lead with no approval
+   * yet, and one with a reference for the approval to name. A lead captured
+   * before references existed is approved through Record an approval instead.
+   */
+  const canApprove = (row: LeadRow) =>
+    Boolean(approving) && canEdit && !row.hasApproval && isLeadId(row.id);
+
+  /** The approval landed: close the form and let the refresh bring the row in as approved. */
+  function approved(message: string) {
+    setApprovingId(null);
+    setError(null);
+    setApprovedNote(message);
+    setAnnouncement(message);
+    startTransition(() => router.refresh());
+  }
 
   /** A different set of leads is a different first page, not page 4 of it. */
   function choose(next: LeadFilter) {
@@ -309,6 +338,10 @@ export function LeadsPanel({
             </p>
           ) : null}
 
+          {approvedNote ? (
+            <p className="mt-3 text-[13px] font-semibold text-leaf-text">{approvedNote}</p>
+          ) : null}
+
           {matching.length === 0 ? (
             <p className="py-12 text-center text-[13px] text-ink-soft">{noLeadsText(filter)}</p>
           ) : (
@@ -328,7 +361,8 @@ export function LeadsPanel({
                 </thead>
                 <tbody>
                   {visible.map((row) => (
-                    <tr key={row.id} className="divider-row last:border-0">
+                    <Fragment key={row.id}>
+                    <tr className="divider-row last:border-0">
                       <td className="max-w-[200px] px-5 py-3.5">
                         <span className="block truncate text-[14px] font-medium">
                           {row.fullName || <span className="text-ink-dim">No name given</span>}
@@ -390,11 +424,26 @@ export function LeadsPanel({
                         {/* No toggle where an approval decides it: pressing it
                             would write a status the next render overrules,
                             which is a control that lies about what it does. */}
-                        {canEdit && !row.hasApproval ? (
-                          <StatusToggle row={row} onToggle={(next) => setStatus(row, next)} />
-                        ) : (
-                          <StatusPill row={row} />
-                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {canEdit && !row.hasApproval ? (
+                            <StatusToggle row={row} onToggle={(next) => setStatus(row, next)} />
+                          ) : (
+                            <StatusPill row={row} />
+                          )}
+                          {canApprove(row) ? (
+                            <button
+                              type="button"
+                              className="btn-outline btn-sm"
+                              aria-expanded={approvingId === row.id}
+                              onClick={() => {
+                                setApprovedNote('');
+                                setApprovingId(approvingId === row.id ? null : row.id);
+                              }}
+                            >
+                              Approve
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
 
                       {/* Beside the status because it is the detail of it:
@@ -414,6 +463,22 @@ export function LeadsPanel({
                         {row.age}
                       </td>
                     </tr>
+                    {/* Under its lead rather than in a dialog, so the name, the
+                        owner and the card on record stay in view while the
+                        approval is filled in. */}
+                    {approving && approvingId === row.id && canApprove(row) ? (
+                      <tr>
+                        <td colSpan={columns} className="px-5 pb-5">
+                          <ApproveLead
+                            lead={row}
+                            context={approving}
+                            onDone={approved}
+                            onCancel={() => setApprovingId(null)}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -473,8 +538,9 @@ export function StatusNote({ canEdit, fromApprovals }: { canEdit: boolean; fromA
         <>
           Every lead starts <strong>{pending}</strong> and reads <strong>{applied}</strong> once a
           report sync finds their application, with the card they applied for in the Card column.
-          Mark one <strong>{approved}</strong> once they have signed up, either here or in column N
-          of the sheet.
+          Press <strong>Approve</strong> once they are approved, and pick the card: that records
+          what it paid, and the affiliate&rsquo;s share of it. The report sync replaces it with
+          QMP&rsquo;s own approval when that arrives.
         </>
       ) : (
         <>
@@ -565,6 +631,9 @@ export function StatusToggle({
   onToggle: (next: LeadStatus) => void;
 }) {
   const next = nextManualStatus(row);
+  // Nowhere to go, such as an applied lead with its card on record: a button
+  // that does nothing is worse than a pill that does not claim to.
+  if (next === null) return <StatusPill row={row} />;
   const who = row.fullName || row.email || 'this lead';
   return (
     <button

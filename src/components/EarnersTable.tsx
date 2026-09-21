@@ -32,11 +32,14 @@ export function EarnersTable({
   rows,
   totals,
   period,
+  month = '',
   gross,
 }: {
   rows: EarningsRow[];
   totals: EarningsView['totals'];
   period: Period;
+  /** The month being shown, carried into each person's page. */
+  month?: string;
   gross: boolean;
 }) {
   const [page, setPage] = useState(1);
@@ -111,7 +114,7 @@ export function EarnersTable({
                   {/* One link per row rather than a whole-row target: the
                       thing you can click is then something you can see. */}
                   <Link
-                    href={affiliateHref(row.usr, period)}
+                    href={affiliateHref(row.usr, period, month)}
                     className="btn-outline btn-sm"
                     aria-label={`Open ${row.person}`}
                   >

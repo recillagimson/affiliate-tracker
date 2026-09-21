@@ -126,17 +126,26 @@ export function statusRank(status: LeadStatus): number {
 }
 
 /**
- * Where the admin's one-click toggle takes a lead.
+ * Where the admin's one-click toggle takes a lead, or null when it has nowhere
+ * to go.
  *
- * Marking a lead approved is always one click, from either earlier state.
- * Taking an approval back returns the lead to where the evidence leaves it:
- * applied when a card is on record, since the merchant did see an application,
- * and pending when nothing is. Sending a lead with a card back to pending would
- * contradict the card shown beside it.
+ * The toggle never marks a lead approved. Approved is money, and money is
+ * recorded with Approve on the leads list, which asks which card and what it
+ * paid; a pill that said Approved with nothing behind it would be a lead nobody
+ * gets paid for. So the toggle moves between pending and applied only.
+ *
+ * Nothing sends a lead with a card back to pending, which would contradict the
+ * card shown beside it. An applied lead with a card therefore has no move.
+ *
+ * A lead marked approved by hand before Approve existed, with no approval
+ * behind it, can still be taken back: to applied when a card is on record,
+ * since the merchant did see an application, and to pending when nothing is.
  */
-export function nextManualStatus(row: { status: LeadStatus; card: string }): LeadStatus {
-  if (row.status !== 'registered') return 'registered';
-  return row.card.trim() === '' ? 'pending' : 'applied';
+export function nextManualStatus(row: { status: LeadStatus; card: string }): LeadStatus | null {
+  const hasCard = row.card.trim() !== '';
+  if (row.status === 'registered') return hasCard ? 'applied' : 'pending';
+  if (row.status === 'applied') return hasCard ? null : 'pending';
+  return 'applied';
 }
 
 /**

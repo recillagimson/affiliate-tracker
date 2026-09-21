@@ -10,6 +10,7 @@ import {
   type ColumnKind,
   type SortDirection,
 } from '@/lib/report-table';
+import { manualSwapNote } from '@/lib/manual-approval';
 import { PAGE_SIZES, pageBounds, pageSlice } from '@/lib/paging';
 import { statusLabel } from '@/lib/status';
 import { Pager } from './Pager';
@@ -64,7 +65,13 @@ type SyncResult = {
   leadsToApply: number;
   /** Leads whose status stands and which only gain a card. */
   cardsToRecord: number;
+  /** Approvals recorded by hand that QMP's own replace. */
+  manualToReplace: number;
+  /** QMP approvals not written because a manual one on a payout request stands for them. */
+  manualKept: number;
   created?: number;
+  /** Manual approvals swapped for QMP's, on a run that applied. */
+  replaced?: number;
   /** How many of each were, on a run that applied. */
   leadsMarked?: number;
   leadsApplied?: number;
@@ -83,6 +90,8 @@ type SyncResult = {
     amount: number;
     card: string;
     client: string;
+    /** Written in place of an approval recorded by hand. */
+    replacesManual?: boolean;
   }[];
 };
 
@@ -814,6 +823,10 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                 />
               </dl>
 
+              {manualSwapNote(sync, sync.applied) ? (
+                <p className="plain mt-4">{manualSwapNote(sync, sync.applied)}</p>
+              ) : null}
+
               {!sync.applied && leadChangeCount(sync) > 0 ? (
                 <p className="plain mt-4">{leadPlanNote(sync)}</p>
               ) : null}
@@ -922,6 +935,11 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                             </td>
                             <td className="tnum px-3 py-3 text-right text-[12px]">
                               {money(row.amount)}
+                              {/* The amount is the one thing a swap changes, so
+                                  it is said where the amount is read. */}
+                              {row.replacesManual ? (
+                                <span className="block text-[11px] text-ink-soft">replaces manual</span>
+                              ) : null}
                             </td>
                           </tr>
                         ))}

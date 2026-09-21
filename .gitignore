@@ -38,3 +38,4 @@ next-env.d.ts
 # deploy, which it once did: a Viewer literal here went out of date when the
 # type gained a field. They are kept on disk and out of the repository.
 scripts/_tmp-*
+.vercel

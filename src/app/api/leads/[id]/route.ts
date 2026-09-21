@@ -45,7 +45,14 @@ export async function PATCH(request: Request, { params }: Context) {
   } catch (error) {
     if (error instanceof ZodError) {
       return NextResponse.json(
-        { error: 'That is not a status we recognise.', fields: fieldErrors(error) },
+        {
+          // The refusal for approved says where to go instead; anything else
+          // is a word that is not a status at all.
+          error:
+            error.issues.find((issue) => issue.code === 'custom')?.message ??
+            'That is not a status we recognise.',
+          fields: fieldErrors(error),
+        },
         { status: 422 },
       );
     }

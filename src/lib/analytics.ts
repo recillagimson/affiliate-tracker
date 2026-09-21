@@ -320,6 +320,85 @@ export function periodStart(period: Period): string {
   return daysAgoKey(days - 1);
 }
 
+/* --------------------------------------------------------- calendar months -- */
+
+/**
+ * A calendar month, `YYYY-MM`, read out of the URL, or '' for none.
+ *
+ * The periods above are rolling windows; a month is the other question people
+ * ask of this data, "what did September come to", which is the unit a payout is
+ * settled and a statement is checked in. It sits beside the periods rather than
+ * replacing one, and outranks them when both are in the URL.
+ */
+export function parseMonth(raw: string): string {
+  const value = (raw ?? '').trim();
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match) return '';
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  // Before the web had affiliate links is a transposed year, not a month.
+  if (year < 2000 || month < 1 || month > 12) return '';
+  return value;
+}
+
+/**
+ * The first and last day a month covers, both included. Day 0 of the next
+ * month is the last day of this one, so Date does the counting, February and
+ * all.
+ */
+export function monthWindow(month: string): { start: string; end: string } {
+  const [year, index] = month.split('-').map(Number);
+  const first = new Date(Date.UTC(year!, index! - 1, 1));
+  const last = new Date(Date.UTC(year!, index!, 0));
+  return { start: first.toISOString().slice(0, 10), end: last.toISOString().slice(0, 10) };
+}
+
+/** "September 2026". */
+export function monthLabel(month: string): string {
+  return longMonth(month);
+}
+
+/**
+ * Every month with a visit or an approval in it, newest first: the month
+ * filter's options. Visits by the click and approvals by their approval day,
+ * as everywhere else. From every row rather than the filtered ones, for the
+ * reason the person filter gives: options that vanish as you narrow the view
+ * are no way to widen it again.
+ */
+export function activeMonths(visits: Visit[], conversions: Conversion[]): string[] {
+  const months = new Set<string>();
+  for (const visit of visits) months.add(dayKey(visit.createdAt).slice(0, 7));
+  for (const row of conversions) months.add(row.approvedOn.slice(0, 7));
+  return [...months].filter((month) => parseMonth(month) !== '').sort().reverse();
+}
+
+/**
+ * The sales figures for a window: how many approvals, what they paid, the
+ * affiliates' share of that, and what is kept.
+ *
+ * What is kept is the payout less the share, not a share of its own. The
+ * share is worked out approval by approval at the rate on each one's day
+ * (buildEarnings), so taking the rest from the total is what guarantees the
+ * two add back up to the payout, to the cent, across a rate change.
+ *
+ * `gross` false is an affiliate, whose rows already are their share. They are
+ * shown that and the count, and never the merchant's payout or the house's
+ * cut, so both come back null rather than as a number to be hidden later.
+ */
+export function salesFigures(
+  totals: { approved: number; earnings: number; affiliate: number },
+  gross: boolean,
+): { sales: number; payout: number | null; share: number; keep: number | null } {
+  if (!gross) return { sales: totals.approved, payout: null, share: totals.affiliate, keep: null };
+  const payout = Math.round(totals.earnings * 100) / 100;
+  return {
+    sales: totals.approved,
+    payout,
+    share: totals.affiliate,
+    keep: Math.round((payout - totals.affiliate) * 100) / 100,
+  };
+}
+
 export type EarningsRow = {
   key: string;
   usr: string;
@@ -418,8 +497,10 @@ export const HOUSE_KEY = '_house';
 const HOUSE_LABEL = 'Unassigned / house';
 
 /** The URL for one person's own earnings page. */
-export function affiliateHref(usr: string, period?: Period): string {
+export function affiliateHref(usr: string, period?: Period, month = ''): string {
   const base = `/affiliate/${encodeURIComponent(usr || HOUSE_KEY)}`;
+  // A month outranks the period, on the person's page as on the dashboard.
+  if (month) return `${base}?month=${month}`;
   return period && period !== 'month' ? `${base}?period=${period}` : base;
 }
 
@@ -556,12 +637,15 @@ export function buildEarnings(
   conversions: Conversion[],
   {
     period = 'month',
+    month = '',
     usr = '',
     groupBy = 'person',
     shares = [],
     gross = true,
   }: {
     period?: Period;
+    /** A calendar month, `YYYY-MM`. When set it decides the window instead of `period`. */
+    month?: string;
     usr?: string;
     groupBy?: GroupBy;
     /**
@@ -581,7 +665,9 @@ export function buildEarnings(
 ): EarningsView {
   const names = nameIndex(links);
   const cards = cardIndex(links);
-  const start = periodStart(period);
+  // A month is closed at both ends; a period only has a start, and runs to today.
+  const { start, end } = month ? monthWindow(month) : { start: periodStart(period), end: '' };
+  const inWindow = (day: string) => (!start || day >= start) && (!end || day <= end);
   const matchesPerson = (rowUsr: string) => !usr || (rowUsr || HOUSE_KEY) === usr;
 
   const rows = new Map<string, EarningsRow>();
@@ -618,14 +704,14 @@ export function buildEarnings(
   for (const visit of visits) {
     if (!matchesPerson(visit.usr)) continue;
     const day = dayKey(visit.createdAt);
-    if (start && day < start) continue;
+    if (!inWindow(day)) continue;
     rowFor(visit.usr, cardFor(cards, visit)).visits += 1;
   }
 
   for (const conversion of conversions) {
     if (!matchesPerson(conversion.usr)) continue;
     const day = conversion.approvedOn.slice(0, 10);
-    if (start && day < start) continue;
+    if (!inWindow(day)) continue;
     // The card comes from the link the sale came through — the row itself only
     // stores (slug, usr). Renaming a campaign therefore renames its historic
     // earnings too, which is the trade for having one name in one place.
@@ -691,7 +777,9 @@ export function buildEarnings(
     // The chart follows both filters. It used to follow only the person, which
     // left the picture sitting still while every figure around it moved — and a
     // chart that ignores the control directly above it reads as a broken chart.
-    series: buildEarningsSeries(visits, conversions, { period, usr }),
+    // A month is drawn among the months around it, the way the 30-day
+    // window already is.
+    series: buildEarningsSeries(visits, conversions, { period: month ? 'month' : period, usr }),
   };
 }
 
