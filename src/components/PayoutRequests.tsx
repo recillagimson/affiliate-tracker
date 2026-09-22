@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Modal } from './Modal';
 import { PayeeDetails } from './PayeeDetails';
 import { RowMenu, RowMenuItem } from './RowMenu';
@@ -17,18 +17,23 @@ import {
   describeCancelled,
   describeCardCount,
   describeRequested,
+  countRequestsByStatus,
   filterRequests,
   groupRequests,
+  matchesRequestFilter,
   mismatchNote,
   noRequestsText,
   paymentMessage,
   receiptMessage,
+  REQUEST_FILTERS,
   REQUEST_SECTIONS,
   requestBody,
+  requestFilterFrom,
   requestToggleId,
   statusChip,
   type Payee,
   type RequestCard,
+  type RequestFilter,
   type RequestRow,
 } from '@/lib/payout-admin';
 import { BLANK } from '@/lib/report-table';
@@ -63,13 +68,18 @@ export function PayoutRequests({
   rows,
   today,
   payees = {},
+  status = 'all',
 }: {
   rows: RequestRow[];
   today: string;
   /** Who each request is filed under, keyed by account id. See buildPayees. */
   payees?: Record<string, Payee>;
+  /** Which section to show, read off the URL by the page. */
+  status?: RequestFilter;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
   const [, startTransition] = useTransition();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState('');
@@ -87,10 +97,31 @@ export function PayoutRequests({
   /** The row to put the keyboard back on, and the rows to wait past first (null: none to wait for). */
   const returnTo = useRef<{ id: string; after: RequestRow[] | null } | null>(null);
 
+  /** The name search, which the status options are then counted over. */
   const matched = useMemo(() => filterRequests(rows, query), [rows, query]);
+  const counts = useMemo(() => countRequestsByStatus(matched), [matched]);
+  const shown = useMemo(
+    () => matched.filter((row) => matchesRequestFilter(row, status)),
+    [matched, status],
+  );
   /** The request the dialog is showing, read back off the latest rows. */
   const openRowData = useMemo(() => rows.find((row) => row.id === open) ?? null, [rows, open]);
-  const grouped = useMemo(() => groupRequests(matched), [matched]);
+  const grouped = useMemo(() => groupRequests(shown), [shown]);
+
+  /*
+   * The chosen section lives in the URL, like every other filter here, so a
+   * view of what is still to be paid can be bookmarked or passed to somebody.
+   * Replaced rather than pushed: flipping between sections is looking at one
+   * page, not walking through several, and the Back button should leave the
+   * payouts page rather than retrace every pill that was pressed.
+   */
+  function choose(next: RequestFilter) {
+    const query = new URLSearchParams(params.toString());
+    if (next === 'all') query.delete('status');
+    else query.set('status', next);
+    const search = query.toString();
+    startTransition(() => router.replace(search ? `${pathname}?${search}` : pathname, { scroll: false }));
+  }
 
   /*
    * The figure somebody opens this page to find. Over what the search matched,
@@ -230,6 +261,24 @@ export function PayoutRequests({
           />
         </label>
 
+        {/* Named for what it does to the list below, and counted over whatever
+            the search above it has already found. */}
+        <nav aria-label="Filter requests by status" className="flex flex-wrap items-center gap-2">
+          {REQUEST_FILTERS.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className="pill-filter"
+              data-active={option.key === status}
+              aria-pressed={option.key === status}
+              onClick={() => choose(option.key)}
+            >
+              {option.label}
+              <span className="tnum text-[11px]">{counts[option.key]}</span>
+            </button>
+          ))}
+        </nav>
+
         {/*
           The one figure this page exists to answer, set against the gold
           highlighter rather than in a coloured box. That is the only thing gold
@@ -262,9 +311,13 @@ export function PayoutRequests({
         {saved}
       </p>
 
-      {matched.length === 0 ? (
+      {shown.length === 0 ? (
         <p className="panel mt-5 px-5 py-14 text-center text-[13px] text-ink-soft">
-          {noRequestsText(rows.length, query)}
+          {/* The search has an answer of its own; a status with nothing in it
+              is a different thing to say, and says which status. */}
+          {matched.length === 0
+            ? noRequestsText(rows.length, query)
+            : `Nothing under ${REQUEST_FILTERS.find((option) => option.key === status)?.label}.`}
         </p>
       ) : null}
 

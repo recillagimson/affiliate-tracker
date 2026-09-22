@@ -34,7 +34,9 @@ import {
   describePending,
   indexPeople,
   mismatchNote,
+  countRequestsByStatus,
   noRequestsText,
+  REQUEST_FILTERS,
   pendingEmptyText,
   requestToggleId,
 } from '../src/lib/payout-admin';
@@ -652,6 +654,35 @@ check(
 const panels = [unpaidPanel, paidPanel, paying, replacing, attaching, removing, clearing, cancelling].join('\n');
 check('no em or en dash in the panel', !DASHES.test(panels), panels.match(DASHES));
 check('no gold button in it', !/<button[^>]*gold/.test(panels));
+
+console.log('\n- showing one status at a time -');
+const filters = render(<PayoutRequests rows={rows} today={TODAY} />);
+check('every option is offered', REQUEST_FILTERS.every((option) => filters.includes(`>${option.label}<`)));
+check('all is the one in force before anybody picks', filters.includes('aria-pressed="true"'));
+check('and only one is', count(filters, 'aria-pressed="true"') === 1);
+const filterCounts = countRequestsByStatus(rows);
+check(
+  'each option carries how many it would show',
+  REQUEST_FILTERS.every((option) =>
+    filters.includes(`${option.label}<span class="tnum text-[11px]">${filterCounts[option.key]}</span>`),
+  ),
+  REQUEST_FILTERS.map((option) => `${option.label}=${filterCounts[option.key]}`).join(' '),
+);
+check('which is 7 requests over three sections', filterCounts.all === 7);
+
+const onlyPaid = render(<PayoutRequests rows={rows} today={TODAY} status="paid" />);
+check('paid draws its own section', Boolean(section(onlyPaid, 'Paid')));
+check('and no other', !onlyPaid.includes('>Needs payment</h2>') && !onlyPaid.includes('>Cancelled</h2>'));
+check('the option in force is the pressed one', onlyPaid.includes('aria-pressed="true">Paid'));
+check('the figure above is still what is owed, not what is shown', onlyPaid.includes(formatMoney(awaitingPayment(rows))));
+
+const noneCancelled = render(
+  <PayoutRequests rows={rows.filter((row) => row.status !== 'cancelled')} today={TODAY} status="cancelled" />,
+);
+check('a status with nothing in it says so', noneCancelled.includes('Nothing under Cancelled.'));
+check('and does not pretend nobody has requested anything', !noneCancelled.includes(noRequestsText(0, '')));
+check('no em or en dash in any of it', ![filters, onlyPaid, noneCancelled].some((markup) => DASHES.test(markup)));
+
 
 console.log('\n- who is being paid, in the approve dialog -');
 const PAYEES = buildPayees(

@@ -209,6 +209,42 @@ export const REQUEST_SECTIONS: { key: PayoutRequestStatus; label: string; blurb:
   },
 ];
 
+/* ------------------------------------------------- filtering the requests -- */
+
+/** Everything, or one of the three sections. */
+export type RequestFilter = 'all' | PayoutRequestStatus;
+
+/**
+ * The filter's options: everything first, then the sections in the order the
+ * page draws them, each named exactly as its section heading is. Two names for
+ * one set of requests is two things for a reader to reconcile.
+ */
+export const REQUEST_FILTERS: { key: RequestFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  ...REQUEST_SECTIONS.map((section) => ({ key: section.key as RequestFilter, label: section.label })),
+];
+
+/** A filter read off the URL. Anything unrecognised is everything, never nothing. */
+export function requestFilterFrom(raw: unknown): RequestFilter {
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return REQUEST_FILTERS.some((option) => option.key === value) ? (value as RequestFilter) : 'all';
+}
+
+export function matchesRequestFilter(row: { status: PayoutRequestStatus }, filter: RequestFilter): boolean {
+  return filter === 'all' || row.status === filter;
+}
+
+/**
+ * How many requests each option would show, over the rows it is offered
+ * against — so the counts follow the name search above them rather than
+ * promising rows that search has already taken away.
+ */
+export function countRequestsByStatus(rows: { status: PayoutRequestStatus }[]): Record<RequestFilter, number> {
+  const counts: Record<RequestFilter, number> = { all: rows.length, requested: 0, paid: 0, cancelled: 0 };
+  for (const row of rows) counts[row.status] += 1;
+  return counts;
+}
+
 /**
  * A timestamp as milliseconds, or NaN.
  *

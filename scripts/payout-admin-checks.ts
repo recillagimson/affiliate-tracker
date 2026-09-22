@@ -35,7 +35,11 @@ import {
   PENDING_SECTIONS,
   pendingEmptyText,
   receiptMessage,
+  countRequestsByStatus,
+  matchesRequestFilter,
+  REQUEST_FILTERS,
   REQUEST_SECTIONS,
+  requestFilterFrom,
   requestBody,
   requestToggleId,
   statusChip,
@@ -492,6 +496,31 @@ console.log('\n- pending is priced as the affiliate share, through the page chai
 console.log('\n- the wording rules -');
 check('there was something to read', said.length > 30, said.length);
 check('no em or en dash anywhere', said.every((text) => !/[\u2013\u2014]/.test(text)), said.filter((t) => /[\u2013\u2014]/.test(t)));
+
+console.log('\n- filtering the requests by status -');
+const FILTER_ROWS = [
+  { status: 'requested' as const },
+  { status: 'requested' as const },
+  { status: 'paid' as const },
+  { status: 'cancelled' as const },
+];
+check('the options are everything, then the sections in their order', REQUEST_FILTERS.map((f) => f.key).join() === 'all,requested,paid,cancelled');
+check(
+  'each is named the way its section is',
+  REQUEST_FILTERS.slice(1).every((f, index) => f.label === REQUEST_SECTIONS[index]!.label),
+);
+check('the first option is named for what it shows', REQUEST_FILTERS[0]!.label === 'All');
+check('a status in the URL is honoured', requestFilterFrom('paid') === 'paid');
+check('a tidied one too', requestFilterFrom(' Paid ') === 'paid');
+check('anything else falls back to everything', requestFilterFrom('nonsense') === 'all');
+check('and so does nothing at all', requestFilterFrom(undefined) === 'all');
+check('all keeps every request', FILTER_ROWS.filter((row) => matchesRequestFilter(row, 'all')).length === 4);
+check('paid keeps only the paid ones', FILTER_ROWS.filter((row) => matchesRequestFilter(row, 'paid')).length === 1);
+check('needs payment keeps only those', FILTER_ROWS.filter((row) => matchesRequestFilter(row, 'requested')).length === 2);
+const filterCounts = countRequestsByStatus(FILTER_ROWS);
+check('every option carries its own count', filterCounts.all === 4 && filterCounts.requested === 2 && filterCounts.paid === 1 && filterCounts.cancelled === 1);
+check('a status nobody has counts zero rather than going missing', countRequestsByStatus([]).paid === 0);
+
 
 console.log(`\npayout-admin: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

@@ -15,6 +15,7 @@ import {
   countRequested,
   indexPeople,
   pendingTabCounts,
+  requestFilterFrom,
   tabFrom,
 } from '@/lib/payout-admin';
 import {
@@ -49,7 +50,11 @@ type PageProps = {
  */
 export default async function PayoutsPage({ searchParams }: PageProps) {
   const viewer = await requireAdmin();
-  const tab = tabFrom((await searchParams).tab);
+  const query = await searchParams;
+  const tab = tabFrom(query.tab);
+  // Which section of the Requests tab to show. Read here so the choice
+  // survives a reload and can be shared, like every other filter in the app.
+  const status = requestFilterFrom(Array.isArray(query.status) ? query.status[0] : query.status);
   const today = dayOf(new Date().toISOString());
 
   if (!payoutsEnabled()) {
@@ -192,7 +197,7 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
 
       {tab === 'requests' ? (
         readError ? null : (
-          <PayoutRequests rows={rows} today={today} payees={payees} />
+          <PayoutRequests rows={rows} today={today} payees={payees} status={status} />
         )
       ) : pending ? (
         <PendingApprovals {...pending} />
