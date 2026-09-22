@@ -23,9 +23,12 @@ import {
   type AppRouterInstance,
 } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { PaymentFields, PayoutRequests, RequestCards } from '../src/components/PayoutRequests';
+import { PayeeDetails } from '../src/components/PayeeDetails';
 import { PendingApprovals } from '../src/components/PendingApprovals';
+import { maskAccount } from '../src/lib/mask';
 import {
   awaitingPayment,
+  buildPayees,
   buildPending,
   buildRequestRows,
   describePending,
@@ -36,7 +39,7 @@ import {
   requestToggleId,
 } from '../src/lib/payout-admin';
 import { formatMoney, type ConversionView } from '../src/lib/analytics';
-import { shortDay } from '../src/lib/payout';
+import { PAYOUT_DAYS, shortDay } from '../src/lib/payout';
 import type { PayoutRequestRecord } from '../src/lib/payout-request-store';
 import { BLANK } from '../src/lib/report-table';
 import {
@@ -241,11 +244,21 @@ check('a payment with no receipt says so, in gold', count(paid, 'chip chip-gold"
 check('an unpaid request is not nagged for a receipt', !needs.includes('No receipt'));
 check('a confirmed payment says so', paid.includes('>Confirmed<'));
 
-check('every unpaid request can be paid', count(needs, '>Record payment</button>') === 3);
+check('every unpaid request can be approved', count(needs, '>Approve payment</button>') === 3);
 check('and none of them offers to edit a payment', !needs.includes('Edit payment'));
 check('a paid one is edited instead', count(paid, '>Edit payment</button>') === 2);
-check('and never recorded twice', !paid.includes('Record payment'));
-check('a cancelled request cannot be paid', !cancelled.includes('Record payment') && !cancelled.includes('Edit payment'));
+check('and never approved twice', !paid.includes('Approve payment'));
+check('a cancelled request cannot be paid', !cancelled.includes('Approve payment') && !cancelled.includes('Edit payment'));
+// The details and the fields live in a dialog now, so the button opens one
+// rather than expanding the row in place.
+check('the button says it opens a dialog', count(needs, 'aria-haspopup="dialog"') === 3);
+// The row menu keeps its own aria-expanded; the approve button must not
+// claim to expand anything, because what it opens is a dialog.
+check(
+  'and the approve button claims no expansion',
+  !/<button[^>]*aria-haspopup="dialog"[^>]*aria-expanded/.test(html),
+);
+check('no dialog is in the page until one is opened', !html.includes('<dialog'));
 check('but its cards can still be looked at', count(cancelled, '>Show cards</button>') === 2);
 check('when it was cancelled, and by whom', cancelled.includes('Cancelled 9 Oct 2026') && cancelled.includes('by mark'));
 
@@ -472,12 +485,15 @@ const PENDING_VIEWS = [
 const pending = buildPending(PENDING_VIEWS, byUsr, TODAY, new Set(['p6']));
 const pendingHtml = renderToStaticMarkup(<PendingApprovals {...pending} />);
 const ready = section(pendingHtml, 'Ready to request');
-const counting = section(pendingHtml, 'Counting down');
+const counting = section(pendingHtml, `Not yet ${PAYOUT_DAYS} days`);
 
 check('the summary line is drawn', pendingHtml.includes(describePending(pending)));
 check('and is not highlighted, being a count rather than a debt', !pendingHtml.includes('class="mark'));
 check('both sections are drawn', Boolean(ready && counting));
-check('ready first', pendingHtml.indexOf('>Ready to request</h2>') < pendingHtml.indexOf('>Counting down</h2>'));
+check(
+  'ready first',
+  pendingHtml.indexOf('>Ready to request</h2>') < pendingHtml.indexOf(`>Not yet ${PAYOUT_DAYS} days</h2>`),
+);
 check('each says what it means', pendingHtml.includes('45 days have passed. Nothing happens until the affiliate asks to be paid.'));
 check('the other too', pendingHtml.includes('Not old enough to request yet.'));
 
@@ -524,7 +540,7 @@ const notYet = renderToStaticMarkup(
   />,
 );
 check('with nothing ready, the ready section is not drawn', !notYet.includes('>Ready to request</h2>'));
-check('but the countdown is', notYet.includes('>Counting down</h2>'));
+check('but the countdown is', notYet.includes(`>Not yet ${PAYOUT_DAYS} days</h2>`));
 check('and the line says nothing is ready yet', notYet.includes('Nothing is ready to request yet.'));
 check('no em or en dash in any empty state', ![never, allAsked, notYet].some((markup) => DASHES.test(markup)));
 
@@ -636,6 +652,45 @@ check(
 const panels = [unpaidPanel, paidPanel, paying, replacing, attaching, removing, clearing, cancelling].join('\n');
 check('no em or en dash in the panel', !DASHES.test(panels), panels.match(DASHES));
 check('no gold button in it', !/<button[^>]*gold/.test(panels));
+
+console.log('\n- who is being paid, in the approve dialog -');
+const PAYEES = buildPayees(
+  [
+    {
+      userId: 'u1',
+      username: 'rusinque',
+      fullName: 'Stefany Rusinque',
+      email: 'stefany@example.com',
+      position: 'Affiliate',
+      mobile: '+1 555 0100',
+      usr: 'd4wz7v',
+    },
+  ],
+  [
+    {
+      userId: 'u1',
+      savedAt: '2026-08-01T00:00:00Z',
+      accountName: 'Stefany Rusinque',
+      bankName: 'Chase',
+      accountLast4: '4321',
+    },
+  ],
+);
+const payeeHtml = renderToStaticMarkup(<PayeeDetails payee={PAYEES.u1!} />);
+check('the person is named', payeeHtml.includes('Stefany Rusinque'));
+check('with the details a payment is checked against', ['rusinque', 'stefany@example.com', '+1 555 0100', 'd4wz7v'].every((value) => payeeHtml.includes(value)));
+check('the bank is named', payeeHtml.includes('Chase'));
+check('the account number is masked', payeeHtml.includes(maskAccount('4321')));
+check('and is never in the markup whole', !payeeHtml.includes('>4321<'));
+check('reading it whole is a deliberate press', payeeHtml.includes('>Reveal</span>') || payeeHtml.includes('Reveal'));
+check('it is not listed twice, once stale', count(payeeHtml, maskAccount('4321')) === 1);
+const noBank = renderToStaticMarkup(<PayeeDetails payee={{ ...PAYEES.u1!, bank: null }} />);
+check('no bank details is said, not left blank', noBank.includes('No bank details on file'));
+check('and nothing offers to reveal a number that is not there', !noBank.includes('Reveal'));
+const noPayee = renderToStaticMarkup(<PayeeDetails payee={null} />);
+check('a request under an unknown account says so', noPayee.includes('not on the affiliate roster'));
+check('no em or en dash in any of it', ![payeeHtml, noBank, noPayee].some((markup) => DASHES.test(markup)));
+
 
 console.log(`\npayout-admin-render: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

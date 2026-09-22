@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { Modal } from './Modal';
+import { PayeeDetails } from './PayeeDetails';
 import { RowMenu, RowMenuItem } from './RowMenu';
 import { BusyLabel } from './Spinner';
 import { TableScroller } from './TableScroller';
@@ -25,6 +27,7 @@ import {
   requestBody,
   requestToggleId,
   statusChip,
+  type Payee,
   type RequestCard,
   type RequestRow,
 } from '@/lib/payout-admin';
@@ -56,7 +59,16 @@ import { BLANK } from '@/lib/report-table';
 
 type Draft = { amount: string; paidOn: string; reference: string; note: string };
 
-export function PayoutRequests({ rows, today }: { rows: RequestRow[]; today: string }) {
+export function PayoutRequests({
+  rows,
+  today,
+  payees = {},
+}: {
+  rows: RequestRow[];
+  today: string;
+  /** Who each request is filed under, keyed by account id. See buildPayees. */
+  payees?: Record<string, Payee>;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [query, setQuery] = useState('');
@@ -76,6 +88,8 @@ export function PayoutRequests({ rows, today }: { rows: RequestRow[]; today: str
   const returnTo = useRef<{ id: string; after: RequestRow[] | null } | null>(null);
 
   const matched = useMemo(() => filterRequests(rows, query), [rows, query]);
+  /** The request the dialog is showing, read back off the latest rows. */
+  const openRowData = useMemo(() => rows.find((row) => row.id === open) ?? null, [rows, open]);
   const grouped = useMemo(() => groupRequests(matched), [matched]);
 
   /*
@@ -268,7 +282,6 @@ export function PayoutRequests({ rows, today }: { rows: RequestRow[]; today: str
 
             <ul>
               {list.map((row) => {
-                const expanded = open === row.id;
                 const working = busy === row.id;
                 const chip = statusChip(row.status);
                 const mismatch = mismatchNote(row);
@@ -328,14 +341,14 @@ export function PayoutRequests({ rows, today }: { rows: RequestRow[]; today: str
                           id={requestToggleId(row.id)}
                           type="button"
                           className="btn-outline btn-sm"
-                          aria-expanded={expanded}
+                          aria-haspopup="dialog"
                           onClick={() => openRow(row)}
                         >
                           {row.status === 'cancelled'
                             ? 'Show cards'
                             : row.status === 'paid'
                               ? 'Edit payment'
-                              : 'Record payment'}
+                              : 'Approve payment'}
                         </button>
 
                         {canCancel(row.status) ? (
@@ -371,47 +384,6 @@ export function PayoutRequests({ rows, today }: { rows: RequestRow[]; today: str
                       </p>
                     ) : null}
 
-                    {expanded ? (
-                      <div className="border-t border-edge-faint bg-paper-card px-5 py-5">
-                        <RequestCards cards={row.cards} total={row.totalAmount} />
-
-                        {row.status === 'cancelled' ? (
-                          <p className="plain mt-4 text-[12px]">
-                            This request was withdrawn before it was paid, so these cards are free to be
-                            requested again.
-                          </p>
-                        ) : (
-                          <PaymentFields
-                            row={row}
-                            today={today}
-                            draft={draft}
-                            setDraft={setDraft}
-                            problems={problems}
-                            working={working}
-                            doing={doing}
-                            fileInput={fileInput}
-                            onPay={() =>
-                              send(
-                                row,
-                                {
-                                  action: 'pay',
-                                  amount: Number(draft.amount),
-                                  paidOn: draft.paidOn,
-                                  reference: draft.reference,
-                                  note: draft.note,
-                                },
-                                paymentMessage(row.name, row.status === 'paid'),
-                              )
-                            }
-                            onAttach={(file) => void attach(row, file)}
-                            onRemoveProof={() =>
-                              send(row, { action: 'remove-proof' }, `Receipt removed for ${row.name}.`)
-                            }
-                            onClear={() => send(row, { action: 'clear' }, `Payment cleared for ${row.name}.`)}
-                          />
-                        )}
-                      </div>
-                    ) : null}
                   </li>
                 );
               })}
@@ -419,6 +391,78 @@ export function PayoutRequests({ rows, today }: { rows: RequestRow[]; today: str
           </section>
         );
       })}
+
+      {/*
+        One dialog for the whole list rather than one per row: only one request
+        is ever being approved, and a dialog per row would put fifty of them in
+        the page for the one that is open.
+      */}
+      {openRowData ? (
+        <Modal
+          open
+          title={
+            openRowData.status === 'cancelled'
+              ? `Cards on ${openRowData.name}'s cancelled request`
+              : openRowData.status === 'paid'
+                ? `Edit ${openRowData.name}'s payment`
+                : `Approve payment for ${openRowData.name}`
+          }
+          onClose={() => setOpen('')}
+        >
+            {/* Who, before what: the details are what the amount is checked
+                against, and they are read in that order. */}
+            {openRowData.status === 'cancelled' ? null : (
+              <PayeeDetails payee={payees[openRowData.userId] ?? null} />
+            )}
+
+            <div className="mt-5">
+              <RequestCards cards={openRowData.cards} total={openRowData.totalAmount} />
+            </div>
+
+            {openRowData.status === 'cancelled' ? (
+              <p className="plain mt-4 text-[12px]">
+                This request was withdrawn before it was paid, so these cards are free to be
+                requested again.
+              </p>
+            ) : (
+              <PaymentFields
+                row={openRowData}
+                today={today}
+                draft={draft}
+                setDraft={setDraft}
+                problems={problems}
+                working={busy === openRowData.id}
+                doing={doing}
+                fileInput={fileInput}
+                onPay={() =>
+                  send(
+                    openRowData,
+                    {
+                      action: 'pay',
+                      amount: Number(draft.amount),
+                      paidOn: draft.paidOn,
+                      reference: draft.reference,
+                      note: draft.note,
+                    },
+                    paymentMessage(openRowData.name, openRowData.status === 'paid'),
+                  ).then((done) => {
+                    // Closed only once the payment landed. A refusal keeps the
+                    // dialog open on the fields that were refused.
+                    if (done) setOpen('');
+                    return done;
+                  })
+                }
+                onAttach={(file) => void attach(openRowData, file)}
+                onRemoveProof={() =>
+                  send(openRowData, { action: 'remove-proof' }, `Receipt removed for ${openRowData.name}.`)
+                }
+                onClear={() =>
+                  send(openRowData, { action: 'clear' }, `Payment cleared for ${openRowData.name}.`)
+                }
+              />
+            )}
+        </Modal>
+      ) : null}
     </>
   );
 }

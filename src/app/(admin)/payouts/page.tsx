@@ -6,13 +6,15 @@ import { PayoutRequests } from '@/components/PayoutRequests';
 import { PendingApprovals } from '@/components/PendingApprovals';
 import { describeConversions } from '@/lib/analytics';
 import { asAffiliateShare, loadAll } from '@/lib/load';
-import { listOnboarding } from '@/lib/onboarding-store';
+import { listOnboarding, readBank } from '@/lib/onboarding-store';
 import { dayOf, PAYOUT_DAYS } from '@/lib/payout';
 import {
+  buildPayees,
   buildPending,
   buildRequestRows,
   countRequested,
   indexPeople,
+  pendingTabCounts,
   tabFrom,
 } from '@/lib/payout-admin';
 import {
@@ -97,6 +99,26 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
   const rows = buildRequestRows(requests, byUserId, views);
 
   /*
+   * Who each request is going to, for the approve dialog: the roster rows the
+   * page already read, with the bank details of the accounts that actually
+   * have a request. Only those, and only the unsealed half — the last four
+   * digits, never the number — so opening this page cannot become a way to
+   * read everybody's account.
+   */
+  const payeeIds = [...new Set(rows.map((row) => row.userId))].filter(Boolean);
+  const banks = readError
+    ? []
+    : (
+        await Promise.all(
+          payeeIds.map((id) => readBank(id).catch(() => null)),
+        )
+      ).filter((bank): bank is NonNullable<typeof bank> => bank !== null);
+  const payees = buildPayees(
+    people.filter((person) => payeeIds.includes(person.userId)),
+    banks,
+  );
+
+  /*
    * Pending needs to know which cards are already on a request. Without that
    * read, every card an affiliate has already asked for would be drawn as
    * ready again, which is worse than drawing nothing: it looks like work
@@ -105,7 +127,8 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
    */
   const pending = readError || error ? null : buildPending(views, byUsr, today, committed);
   const requestedCount = readError ? null : countRequested(rows);
-  const readyCount = pending ? pending.ready.length : null;
+  // Both numbers: what can be asked for, and what is still inside its 45 days.
+  const pendingTab = pending ? pendingTabCounts(pending) : null;
 
   return (
     <div className="w-full">
@@ -142,7 +165,16 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
           aria-current={tab === 'pending' ? 'page' : undefined}
         >
           Pending
-          {readyCount === null ? null : <span className="tnum text-[11px]">{readyCount}</span>}
+          {pendingTab === null ? null : (
+            <>
+              <span aria-hidden className="tnum text-[11px]">
+                {pendingTab.badge}
+              </span>
+              {/* The pair on the pill is two numbers with nothing to tell them
+                  apart, so the name says which is which. */}
+              <span className="sr-only">{pendingTab.label}</span>
+            </>
+          )}
           <LinkPending />
         </Link>
       </nav>
@@ -160,7 +192,7 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
 
       {tab === 'requests' ? (
         readError ? null : (
-          <PayoutRequests rows={rows} today={today} />
+          <PayoutRequests rows={rows} today={today} payees={payees} />
         )
       ) : pending ? (
         <PendingApprovals {...pending} />

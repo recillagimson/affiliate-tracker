@@ -21,6 +21,7 @@
  */
 
 import { formatMoney, type ConversionView } from './analytics';
+import { maskAccount } from './mask';
 import { dayOf, PAYOUT_DAYS, settlesUp, shortDay, totalOf } from './payout';
 import {
   daysUntilEligible,
@@ -505,7 +506,14 @@ export const PENDING_SECTIONS: { key: 'ready' | 'countingDown'; label: string; b
     label: 'Ready to request',
     blurb: `${PAYOUT_DAYS} days have passed. Nothing happens until the affiliate asks to be paid.`,
   },
-  { key: 'countingDown', label: 'Counting down', blurb: 'Not old enough to request yet.' },
+  {
+    key: 'countingDown',
+    // Named for the rule rather than for the motion: "Counting down" says
+    // something is happening, and the question an admin has on this tab is
+    // which cards cannot be paid yet and why.
+    label: `Not yet ${PAYOUT_DAYS} days`,
+    blurb: 'Not old enough to request yet.',
+  },
 ];
 
 /**
@@ -528,4 +536,116 @@ export function pendingEmptyText(approved: number): string {
   return approved === 0
     ? 'No approved cards yet. This tab fills up as approvals come in.'
     : 'Nothing waiting. Every eligible card has already been requested.';
+}
+
+/* ------------------------------------------------------- who is being paid -- */
+
+/**
+ * The person behind a request, as the approve dialog needs them: who they are
+ * and where the money goes.
+ *
+ * Assembled on the server from the roster the page already reads and the bank
+ * rows beside it, so the dialog is drawing data rather than fetching it, and
+ * one panel cannot describe somebody differently from another.
+ *
+ * The account number is NOT in here. `last4` is what a bank row carries
+ * unsealed; the whole number is a separate, deliberate request against
+ * /api/onboarding/[userId]/reveal, the same one the person's own page makes.
+ */
+export type Payee = {
+  userId: string;
+  name: string;
+  username: string;
+  email: string;
+  mobile: string;
+  position: string;
+  usr: string;
+  bank: { accountName: string; bankName: string; last4: string; savedAt: string } | null;
+};
+
+/** Keyed by account id, which is what a request carries. A plain object: it crosses to the browser. */
+export function buildPayees(
+  people: { userId: string; username: string; fullName: string; email: string; position: string; mobile: string; usr: string }[],
+  banks: { userId: string; savedAt: string; accountName: string; bankName: string; accountLast4: string }[],
+): Record<string, Payee> {
+  const byUser = new Map(banks.map((bank) => [bank.userId, bank]));
+  const payees: Record<string, Payee> = {};
+  for (const person of people) {
+    const bank = byUser.get(person.userId);
+    payees[person.userId] = {
+      userId: person.userId,
+      // A roster row always has a username; a full name is filled in later, so
+      // an account part-way through onboarding still has something to be called.
+      name: person.fullName.trim() || person.username,
+      username: person.username,
+      email: person.email,
+      mobile: person.mobile,
+      position: person.position,
+      usr: person.usr,
+      bank: bank
+        ? {
+            accountName: bank.accountName,
+            bankName: bank.bankName,
+            last4: bank.accountLast4,
+            savedAt: bank.savedAt,
+          }
+        : null,
+    };
+  }
+  return payees;
+}
+
+/** Who they are, in the order somebody checks a payment against: blanks left out. */
+export function payeeContactLines(payee: Payee): { label: string; value: string }[] {
+  return [
+    { label: 'Username', value: payee.username },
+    { label: 'Email', value: payee.email },
+    { label: 'Mobile', value: payee.mobile },
+    { label: 'Position', value: payee.position },
+    { label: 'Tracking key', value: payee.usr },
+  ].filter((line) => line.value.trim() !== '');
+}
+
+/**
+ * Where the money goes. Said plainly when there is nowhere: an admin may have
+ * paid another way, and a blank panel would read as a page that failed to load.
+ */
+export function payeeBankLines(payee: Payee): { label: string; value: string }[] {
+  if (!payee.bank) return [{ label: 'Bank details', value: 'No bank details on file' }];
+  return [
+    { label: 'Account name', value: payee.bank.accountName },
+    { label: 'Bank', value: payee.bank.bankName },
+    {
+      label: 'Account number',
+      value: payee.bank.last4 ? maskAccount(payee.bank.last4) : 'Not on file',
+    },
+  ];
+}
+
+/* ------------------------------------------------------- counting pending -- */
+
+/** How many cards are ready to request, and how many are still inside their 45 days. */
+export function pendingCounts(split: { ready: unknown[]; countingDown: unknown[] }): {
+  ready: number;
+  waiting: number;
+} {
+  return { ready: split.ready.length, waiting: split.countingDown.length };
+}
+
+/**
+ * The Pending pill: both numbers, and the sentence that says which is which.
+ *
+ * Two numbers on a pill are two numbers nobody can tell apart, so the badge is
+ * the pair and the accessible name spells them out. A zero is kept rather than
+ * hidden: "0 ready" is the answer to the question the tab is opened with.
+ */
+export function pendingTabCounts(split: { ready: unknown[]; countingDown: unknown[] }): {
+  badge: string;
+  label: string;
+} {
+  const { ready, waiting } = pendingCounts(split);
+  return {
+    badge: `${ready} · ${waiting}`,
+    label: `${ready} ready to request, ${waiting} not yet ${PAYOUT_DAYS} days old`,
+  };
 }

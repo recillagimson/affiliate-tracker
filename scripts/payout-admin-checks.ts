@@ -44,6 +44,7 @@ import {
   type RequestRow,
 } from '../src/lib/payout-admin';
 import { describeConversions, formatMoney, type ConversionView } from '../src/lib/analytics';
+import { PAYOUT_DAYS } from '../src/lib/payout';
 import { asAffiliateShare } from '../src/lib/load';
 import { defaultSettings } from '../src/lib/settings';
 import { BLANK } from '../src/lib/report-table';
@@ -445,7 +446,7 @@ check(
   'with what it means',
   heard(PENDING_SECTIONS[0]!.blurb) === '45 days have passed. Nothing happens until the affiliate asks to be paid.',
 );
-check('then counting down', heard(PENDING_SECTIONS[1]!.label) === 'Counting down');
+check('then the ones still inside their 45 days', heard(PENDING_SECTIONS[1]!.label) === `Not yet ${PAYOUT_DAYS} days`);
 check('with what that means', heard(PENDING_SECTIONS[1]!.blurb) === 'Not old enough to request yet.');
 check(
   'nothing ever approved',
