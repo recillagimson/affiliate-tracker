@@ -77,6 +77,8 @@ type SyncResult = {
   leadsApplied?: number;
   cardsRecorded?: number;
   failures?: string[];
+  /** Why Slack was not told, or '' when it was, or is switched off. */
+  slackProblem?: string;
   preview?: {
     approvedOn: string;
     slug: string;
@@ -829,6 +831,14 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
 
               {!sync.applied && leadChangeCount(sync) > 0 ? (
                 <p className="plain mt-4">{leadPlanNote(sync)}</p>
+              ) : null}
+
+              {/* Said apart from the failures above: nothing about the money
+                  went wrong, the channel simply was not told. */}
+              {sync.slackProblem ? (
+                <p className="plain-note mt-4">
+                  The approvals were written. Slack was not told: {sync.slackProblem}
+                </p>
               ) : null}
 
               {sync.failures?.length ? (

@@ -12,6 +12,7 @@ import {
 } from '@/lib/qmp-sync';
 import { clientIndex, nameIndex, UNKNOWN_CLIENT } from '@/lib/analytics';
 import { listCommittedConversionIds, payoutsEnabled } from '@/lib/payout-request-store';
+import { announceSync } from '@/lib/slack';
 import { getStore, statusForError, StoreNotFoundError } from '@/lib/store';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
@@ -265,12 +266,34 @@ export async function POST(request: Request) {
   );
   failures.push(...leads.failures);
 
+  /*
+   * Slack last of all, and only about what actually landed: the approvals
+   * written by this run, in the order they were written, then one summary.
+   * It cannot throw (see lib/slack) and it cannot change what was recorded —
+   * by this point everything is on file either way. A refusal is reported
+   * beside the run's own failures rather than instead of them.
+   */
+  const names = nameIndex(links);
+  const clients = clientIndex(submissions);
+  const slackProblem = await announceSync(
+    toWrite.slice(0, created).map((row) => ({
+      person: names.get(row.usr) ?? row.usr,
+      card: row.card,
+      client: clients.get(row.leadRef) === UNKNOWN_CLIENT ? '' : (clients.get(row.leadRef) ?? ''),
+      approvedOn: row.approvedOn,
+      source: 'sync' as const,
+    })),
+    leads.written.registered,
+  );
+
   return NextResponse.json({
     applied: true,
     ...summary,
     created,
     replaced,
     failures,
+    /** '' when Slack is off or every message landed. */
+    slackProblem,
     leadsMarked: leads.written.registered,
     leadsApplied: leads.written.applied,
     cardsRecorded: leads.written.card,

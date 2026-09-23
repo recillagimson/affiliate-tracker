@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import { isLeadId, newLeadId } from '@/lib/lead-id';
 import { manualApprovalNotes } from '@/lib/manual-approval';
 import { approvedLeadIds, mergeCards } from '@/lib/qmp-sync';
+import { announceApproval } from '@/lib/slack';
 import { getStore, statusForError } from '@/lib/store';
 import { fieldErrors, manualApprovalSchema } from '@/lib/validate';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
@@ -93,6 +94,20 @@ export async function POST(request: Request, { params }: Context) {
     } catch {
       // Left for the next sync, which writes it from the approval.
     }
+
+    /*
+     * After the money and after the lead, for the reason given in lib/slack:
+     * nothing about announcing an approval may put recording one at risk.
+     * The card is the one just picked, and the client is the lead itself,
+     * which is the whole point of approving from this list.
+     */
+    await announceApproval({
+      person: lead.assignee,
+      card: input.card,
+      client: lead.fullName || lead.email,
+      approvedOn: input.approvedOn,
+      source: 'manual',
+    });
 
     return NextResponse.json({ conversion }, { status: 201 });
   } catch (error) {

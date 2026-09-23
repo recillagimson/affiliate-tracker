@@ -91,6 +91,28 @@ header columns — the app maps by position. Adding columns of your own to the *
 the last one is fine; putting one in the middle is refused with an error rather than
 silently filing values under the wrong headings.
 
+## Tell Slack about approvals
+
+Every approval recorded — by hand on the dashboard, from the Approve button on a
+lead, or imported by a report sync — can post a line to one Slack channel.
+
+1. **api.slack.com/apps** → *Create New App* → *From scratch* → pick your workspace.
+2. **Incoming Webhooks** → turn on → *Add New Webhook to Workspace* → choose the channel.
+3. Put the URL Slack gives you in `.env.local`, and in your host's environment settings:
+
+```bash
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T000/B000/xxxxxxxx
+```
+
+A message names the person, the card, the client and the day, and links back to the
+dashboard. **It never carries an amount, an affiliate's share or the commission rate** —
+a channel is read by everyone invited to it, and the figures stay behind the sign-in.
+
+A sync names the approvals it imported, up to ten, then says how many more there were,
+then posts one summary. Nothing here can stop an approval being recorded: the approval is
+written first, and a channel that is unreachable is reported on the sync screen and
+otherwise ignored.
+
 ## What a click does
 
 A visit is recorded server-side and the visitor is **forwarded straight to the
