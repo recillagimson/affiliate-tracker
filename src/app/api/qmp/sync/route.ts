@@ -278,6 +278,8 @@ export async function POST(request: Request) {
   const slackProblem = await announceSync(
     toWrite.slice(0, created).map((row) => ({
       person: names.get(row.usr) ?? row.usr,
+      campaign:
+        links.find((link) => link.slug === row.slug && link.usr === row.usr)?.campaign || row.slug,
       card: row.card,
       client: clients.get(row.leadRef) === UNKNOWN_CLIENT ? '' : (clients.get(row.leadRef) ?? ''),
       approvedOn: row.approvedOn,

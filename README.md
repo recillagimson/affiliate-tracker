@@ -104,9 +104,19 @@ lead, or imported by a report sync — can post a line to one Slack channel.
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T000/B000/xxxxxxxx
 ```
 
-A message names the person, the card, the client and the day, and links back to the
-dashboard. **It never carries an amount, an affiliate's share or the commission rate** —
-a channel is read by everyone invited to it, and the figures stay behind the sign-in.
+A message reads:
+
+```
+LEDGER - AFFILIATE APPROVAL 🎉
+Affiliate Name: Gimson Recilla
+CARD: Best Cards | Client Jefferson Florez · Chase Freedom Unlimited(R)
+Approved: 23 Sept 2026
+```
+
+**It never carries an amount, an affiliate's share or the commission rate** — a channel is
+read by everyone invited to it, and the figures stay behind the sign-in. The card line
+drops whichever of the campaign, client and card is not on record, and goes entirely when
+none of them is.
 
 A sync names the approvals it imported, up to ten, then says how many more there were,
 then posts one summary. Nothing here can stop an approval being recorded: the approval is

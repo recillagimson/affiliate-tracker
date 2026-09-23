@@ -21,50 +21,57 @@ function check(name: string, actual: unknown, expected: unknown) {
 }
 
 const one: ApprovalAnnouncement = {
-  person: 'Arthur Reyes',
-  card: 'Chase Sapphire Preferred(R) Card',
-  client: 'Sam Ortiz',
-  approvedOn: '2026-09-22',
+  person: 'Gimson Recilla',
+  campaign: 'Best Cards',
+  card: 'Chase Freedom Unlimited(R)',
+  client: 'Jefferson Florez',
+  approvedOn: '2026-09-23',
   source: 'manual',
 };
 
 console.log('— one approval —');
 check(
-  'who, which card, which client, and when',
-  approvalMessage(one, ''),
-  'New approval · Arthur Reyes · Chase Sapphire Preferred(R) Card\nClient: Sam Ortiz · Approved 22 Sept 2026 · Recorded by hand',
+  'the heading, the affiliate, the card line and the day',
+  approvalMessage(one),
+  '*LEDGER - AFFILIATE APPROVAL* 🎉\n' +
+    '*Affiliate Name:* Gimson Recilla\n' +
+    '*CARD:* Best Cards | Client Jefferson Florez · Chase Freedom Unlimited(R)\n' +
+    '*Approved:* 23 Sept 2026',
 );
 check(
-  'an imported one says where it came from',
-  approvalMessage({ ...one, source: 'sync' }, ''),
-  'New approval · Arthur Reyes · Chase Sapphire Preferred(R) Card\nClient: Sam Ortiz · Approved 22 Sept 2026 · From the QMP report',
+  'an imported one reads exactly the same: where it came from is not news to a channel',
+  approvalMessage({ ...one, source: 'sync' }),
+  approvalMessage(one),
 );
 check(
-  'with a base url it links to the dashboard',
-  approvalMessage(one, 'https://affiliate.example.com/'),
-  'New approval · Arthur Reyes · Chase Sapphire Preferred(R) Card\nClient: Sam Ortiz · Approved 22 Sept 2026 · Recorded by hand\nhttps://affiliate.example.com',
+  'no client on record leaves the campaign and the card',
+  approvalMessage({ ...one, client: '' }),
+  '*LEDGER - AFFILIATE APPROVAL* 🎉\n' +
+    '*Affiliate Name:* Gimson Recilla\n' +
+    '*CARD:* Best Cards | Chase Freedom Unlimited(R)\n' +
+    '*Approved:* 23 Sept 2026',
 );
 check(
-  'no client on record is left out rather than shown blank',
-  approvalMessage({ ...one, client: '' }, ''),
-  'New approval · Arthur Reyes · Chase Sapphire Preferred(R) Card\nApproved 22 Sept 2026 · Recorded by hand',
+  'no card on record leaves the campaign and the client',
+  approvalMessage({ ...one, card: '' }),
+  '*LEDGER - AFFILIATE APPROVAL* 🎉\n' +
+    '*Affiliate Name:* Gimson Recilla\n' +
+    '*CARD:* Best Cards | Client Jefferson Florez\n' +
+    '*Approved:* 23 Sept 2026',
 );
 check(
-  'no card on record is left out too',
-  approvalMessage({ ...one, card: '', client: '' }, ''),
-  'New approval · Arthur Reyes\nApproved 22 Sept 2026 · Recorded by hand',
+  'nothing to put on the card line drops the line rather than printing a label with nothing after it',
+  approvalMessage({ ...one, campaign: '', card: '', client: '' }),
+  '*LEDGER - AFFILIATE APPROVAL* 🎉\n*Affiliate Name:* Gimson Recilla\n*Approved:* 23 Sept 2026',
 );
 check(
   'a key with nobody behind it is named, not left as a gap',
-  approvalMessage({ ...one, person: '', client: '' }, ''),
-  'New approval · Unassigned · Chase Sapphire Preferred(R) Card\nApproved 22 Sept 2026 · Recorded by hand',
+  approvalMessage({ ...one, person: '' }).split('\n')[1],
+  '*Affiliate Name:* Unassigned',
 );
 
 console.log('\n— what it never says —');
-const money = [
-  approvalMessage({ ...one }, ''),
-  ...syncMessages([{ ...one, source: 'sync' }], 3),
-].join('\n');
+const money = [approvalMessage(one), ...syncMessages([{ ...one, source: 'sync' }], 3)].join('\n');
 check('no amount, no share, no percentage', /\$|payout|share|commission|%/i.test(money), false);
 
 console.log('\n— a sync —');
@@ -80,7 +87,7 @@ check(
   'one import is its own message, then the summary',
   syncMessages(many(1), 2),
   [
-    approvalMessage({ ...one, source: 'sync', person: 'Person 1' }, ''),
+    approvalMessage({ ...one, source: 'sync', person: 'Person 1' }),
     'QMP sync: 1 approval imported, 2 leads marked approved.',
   ],
 );

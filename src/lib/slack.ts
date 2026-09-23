@@ -1,4 +1,3 @@
-import { configuredBaseUrl } from './config';
 import { approvalMessage, syncMessages, type ApprovalAnnouncement } from './slack-messages';
 
 /**
@@ -94,7 +93,7 @@ export async function announce(messages: string[]): Promise<string> {
 /** One approval, announced. Safe to call without awaiting the result. */
 export async function announceApproval(approval: ApprovalAnnouncement): Promise<string> {
   if (!slackConfigured()) return '';
-  return announce([approvalMessage(approval, configuredBaseUrl() ?? '')]);
+  return announce([approvalMessage(approval)]);
 }
 
 /** A sync's approvals and its summary, in the order the channel should read them. */
@@ -103,5 +102,5 @@ export async function announceSync(
   leadsMarked: number,
 ): Promise<string> {
   if (!slackConfigured()) return '';
-  return announce(syncMessages(approvals, leadsMarked, configuredBaseUrl() ?? ''));
+  return announce(syncMessages(approvals, leadsMarked));
 }

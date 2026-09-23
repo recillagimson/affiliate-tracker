@@ -103,6 +103,7 @@ export async function POST(request: Request, { params }: Context) {
      */
     await announceApproval({
       person: lead.assignee,
+      campaign: lead.campaign || lead.slug,
       card: input.card,
       client: lead.fullName || lead.email,
       approvedOn: input.approvedOn,

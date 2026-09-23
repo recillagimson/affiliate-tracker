@@ -55,7 +55,10 @@ export async function POST(request: Request) {
     const link = links.find((row) => row.slug === conversion.slug && row.usr === conversion.usr);
     await announceApproval({
       person: link?.assignee ?? '',
-      card: link?.campaign ?? '',
+      campaign: link?.campaign || link?.slug || '',
+      // Which card was approved is not asked for here, so the campaign stands
+      // for it, as it does everywhere else this approval is read.
+      card: '',
       client: '',
       approvedOn: conversion.approvedOn,
       source: 'manual',
