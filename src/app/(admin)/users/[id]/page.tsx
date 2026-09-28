@@ -11,6 +11,9 @@ import { isBypassed, NO_BYPASS, UNREVIEWED, type Approval, type Bypass } from '@
 import { maskAccount, maskTin } from '@/lib/mask';
 import { firstMissingRequired, NOTHING_DONE, W9_CLASSIFICATIONS } from '@/lib/onboarding';
 import { readAgreement, readBank, readProgress, readW9 } from '@/lib/onboarding-store';
+import { toE164 } from '@/lib/phone';
+import { smsConfigured, testNumber } from '@/lib/sms';
+import { readSmsSettings, recentTexts } from '@/lib/sms-store';
 import { findUserById, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
 
@@ -46,11 +49,13 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const account = await findUserById(id);
   if (!account) notFound();
 
-  const [progress, agreement, w9, bank] = await Promise.all([
+  const [progress, agreement, w9, bank, sms, texts] = await Promise.all([
     readProgress(id).catch(() => null),
     readAgreement(id).catch(() => null),
     readW9(id).catch(() => null),
     readBank(id).catch(() => null),
+    readSmsSettings(id).catch(() => null),
+    recentTexts(id).catch(() => null),
   ]);
   const state = progress?.state ?? null;
   const approval = progress?.approval ?? { ...UNREVIEWED };
@@ -107,6 +112,10 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           </p>
         )}
       </section>
+
+      {account.role === 'affiliate' ? (
+        <ApprovalTexts mobile={account.mobile} settings={sms} texts={texts} />
+      ) : null}
 
       {/* Step 2 */}
       <section className="panel mt-5 p-6 sm:p-7">
@@ -295,6 +304,76 @@ function reviewBlurb(unknown: boolean, approval: Approval, bypass: Bypass): stri
     return 'Everything is in and waiting on you. Approving it opens their dashboard and emails them.';
   }
   return 'They have not finished their paperwork, so there is nothing to read yet.';
+}
+
+/**
+ * Whether this affiliate is texted when their approvals land, and the last few
+ * texts. null for either read means the texting migration has not been run.
+ */
+function ApprovalTexts({
+  mobile,
+  settings,
+  texts,
+}: {
+  mobile: string;
+  settings: Awaited<ReturnType<typeof readSmsSettings>> | null;
+  texts: Awaited<ReturnType<typeof recentTexts>> | null;
+}) {
+  const number = toE164(mobile);
+  const test = testNumber();
+  return (
+    <section className="panel mt-5 p-6 sm:p-7">
+      <h2 className="text-[15px] font-semibold">Approval texts</h2>
+      {!smsConfigured() ? (
+        <p className="plain mt-2">
+          Texting is off. Set GHL_PRIVATE_TOKEN and GHL_LOCATION_ID to switch it on.
+        </p>
+      ) : null}
+      {settings === null ? (
+        <p className="plain mt-2">
+          Could not read their text settings. If this is a new deploy, run: npx supabase db push
+        </p>
+      ) : (
+        <>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Fact
+              label="Opted in"
+              value={settings.optInAt ? formatDateTime(settings.optInAt) : 'No, so they are not texted'}
+            />
+            <Fact
+              label="Texted at"
+              value={number || 'Their mobile number cannot be texted. Ask them to correct it.'}
+              mono={Boolean(number)}
+            />
+            <Fact label="GoHighLevel contact" value={settings.ghlContactId || 'Found on the first text'} mono />
+          </div>
+          {test ? (
+            <p className="plain-note mt-4">
+              Test mode: every text goes to {test} instead, marked with who it was for.
+            </p>
+          ) : null}
+          {texts && texts.length > 0 ? (
+            <ul className="mt-5 grid gap-3">
+              {texts.map((row) => (
+                <li key={row.id} className="border-t border-edge-faint pt-3 text-[13px]">
+                  <p className="text-ink-soft">
+                    <span className="tnum">{formatDateTime(row.createdAt)}</span> ·{' '}
+                    {row.status === 'sent' ? 'Sent' : row.status === 'skipped' ? 'Not sent' : 'Failed'}
+                    {' · '}
+                    {row.approvals} approval{row.approvals === 1 ? '' : 's'}
+                    {row.detail ? ` · ${row.detail}` : ''}
+                  </p>
+                  {row.message ? <p className="plain mt-1 whitespace-pre-line">{row.message}</p> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="plain mt-4">No approval texts yet.</p>
+          )}
+        </>
+      )}
+    </section>
+  );
 }
 
 function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {

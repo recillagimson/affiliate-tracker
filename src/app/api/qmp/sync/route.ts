@@ -13,6 +13,7 @@ import {
 import { clientIndex, nameIndex, UNKNOWN_CLIENT } from '@/lib/analytics';
 import { listCommittedConversionIds, payoutsEnabled } from '@/lib/payout-request-store';
 import { announceSync } from '@/lib/slack';
+import { smsSummary, textApprovals } from '@/lib/sms';
 import { getStore, statusForError, StoreNotFoundError } from '@/lib/store';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
@@ -288,6 +289,25 @@ export async function POST(request: Request) {
     leads.written.registered,
   );
 
+  /*
+   * Then the affiliates, one text each however many approvals are theirs (see
+   * lib/sms-messages). Only what landed, like Slack. An approval that replaced
+   * one recorded by hand is left out: its affiliate was texted when an admin
+   * approved it, and the swap is QMP's figure for the same approval, not news.
+   */
+  const texted = await textApprovals(
+    toWrite
+      .slice(0, created)
+      .filter((row) => !replacing.has(row.marker))
+      .map((row) => ({
+        usr: row.usr,
+        card: row.card,
+        campaign:
+          links.find((link) => link.slug === row.slug && link.usr === row.usr)?.campaign || row.slug,
+        approvedOn: row.approvedOn,
+      })),
+  );
+
   return NextResponse.json({
     applied: true,
     ...summary,
@@ -296,6 +316,8 @@ export async function POST(request: Request) {
     failures,
     /** '' when Slack is off or every message landed. */
     slackProblem,
+    /** What happened to the texts, in a line: '' when texting is off or there was nothing to text. */
+    sms: smsSummary(texted),
     leadsMarked: leads.written.registered,
     leadsApplied: leads.written.applied,
     cardsRecorded: leads.written.card,

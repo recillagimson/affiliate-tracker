@@ -18,6 +18,7 @@ export function ProfileForm({
   initialEmail,
   initialPosition = '',
   initialMobile = '',
+  initialSmsOptIn = false,
   revisiting = false,
   continueTo = '',
   continueLabel = 'Continue',
@@ -26,6 +27,8 @@ export function ProfileForm({
   initialEmail: string;
   initialPosition?: string;
   initialMobile?: string;
+  /** Whether they have already agreed to approval texts. */
+  initialSmsOptIn?: boolean;
   /** Already done once. Changes what the password half asks for. */
   revisiting?: boolean;
   /** Where "leave without saving" goes, when there is anywhere to go. */
@@ -37,6 +40,7 @@ export function ProfileForm({
     email: initialEmail,
     position: initialPosition,
     mobile: initialMobile,
+    smsOptIn: initialSmsOptIn,
     password: '',
     confirmPassword: '',
   });
@@ -163,6 +167,24 @@ export function ProfileForm({
           {errors.mobile ? <span className="field-error">{errors.mobile}</span> : null}
         </label>
       </div>
+
+      {/* Unticked until they tick it. This box is the consent the carriers ask
+          about, so it is theirs to give, and the wording is what they agreed to. */}
+      <label className="mt-5 flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-5 w-5 shrink-0"
+          checked={Boolean(values.smsOptIn)}
+          onChange={(e) => set('smsOptIn', e.target.checked)}
+        />
+        <span>
+          <span className="field-label">Text me when an approval comes in</span>
+          <span className="field-note block">
+            A text to the mobile number above each time your approvals land, one per sync. Message
+            frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help.
+          </span>
+        </span>
+      </label>
 
       <div className="mt-6 border-t border-edge-faint pt-6">
         <h2 className="text-[15px] font-semibold">

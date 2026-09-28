@@ -79,6 +79,8 @@ type SyncResult = {
   failures?: string[];
   /** Why Slack was not told, or '' when it was, or is switched off. */
   slackProblem?: string;
+  /** Who was texted about their approvals, and who was not and why. */
+  sms?: string;
   preview?: {
     approvedOn: string;
     slug: string;
@@ -840,6 +842,8 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   The approvals were written. Slack was not told: {sync.slackProblem}
                 </p>
               ) : null}
+
+              {sync.sms ? <p className="plain-note mt-4">{sync.sms}</p> : null}
 
               {sync.failures?.length ? (
                 <div className="mt-5">

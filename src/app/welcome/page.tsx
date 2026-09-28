@@ -5,6 +5,7 @@ import { RevisitNotice } from '@/components/onboarding/StepControls';
 import { isBypassed } from '@/lib/approval';
 import { nextStep, stepPosition } from '@/lib/onboarding';
 import { requireStep } from '@/lib/onboarding-guard';
+import { readSmsSettings } from '@/lib/sms-store';
 import { findUserById } from '@/lib/users';
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +24,7 @@ export default async function WelcomePage() {
   // attention. On a return visit it is prefilled from what they themselves
   // saved, for the same reason.
   const account = await findUserById(viewer.id).catch(() => null);
+  const sms = await readSmsSettings(viewer.id).catch(() => null);
 
   // Where "leave without saving" goes: whatever they still owe, or the app.
   const onward = nextStep(state, { bypassed: waived });
@@ -57,6 +59,7 @@ export default async function WelcomePage() {
         initialEmail={account?.email ?? ''}
         initialPosition={account?.position ?? ''}
         initialMobile={account?.mobile ?? ''}
+        initialSmsOptIn={Boolean(sms?.optInAt)}
         revisiting={revisiting}
         continueTo={onward?.path ?? '/'}
         continueLabel={onward ? `Continue to ${onward.label.toLowerCase()}` : 'Go to the dashboard'}

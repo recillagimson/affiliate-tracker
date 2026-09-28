@@ -4,6 +4,7 @@ import { isLeadId, newLeadId } from '@/lib/lead-id';
 import { manualApprovalNotes } from '@/lib/manual-approval';
 import { approvedLeadIds, mergeCards } from '@/lib/qmp-sync';
 import { announceApproval } from '@/lib/slack';
+import { smsSummary, textApprovals } from '@/lib/sms';
 import { getStore, statusForError } from '@/lib/store';
 import { fieldErrors, manualApprovalSchema } from '@/lib/validate';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
@@ -110,7 +111,18 @@ export async function POST(request: Request, { params }: Context) {
       source: 'manual',
     });
 
-    return NextResponse.json({ conversion }, { status: 201 });
+    // The affiliate whose link it was, by text. The number is theirs, from
+    // their account; the lead is never texted. See lib/sms.
+    const texted = await textApprovals([
+      {
+        usr: lead.usr,
+        card: input.card,
+        campaign: lead.campaign || lead.slug,
+        approvedOn: input.approvedOn,
+      },
+    ]);
+
+    return NextResponse.json({ conversion, sms: smsSummary(texted) }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Could not approve that lead' },

@@ -123,6 +123,49 @@ then posts one summary. Nothing here can stop an approval being recorded: the ap
 written first, and a channel that is unreachable is reported on the sync screen and
 otherwise ignored.
 
+## Text affiliates about their approvals
+
+Every approval — by hand, from a lead's Approve button, or imported by a report sync —
+texts the affiliate whose link it came through, through GoHighLevel. **One text per
+affiliate per event**: a sync that imports three of somebody's approvals sends them one
+summary.
+
+```
+LEDGER: Hi Gimson, you have 2 new approvals: Chase Freedom Unlimited(R), Capital One Venture.
+View: https://your-ledger.example.com/
+Reply STOP to opt out.
+```
+
+1. `npx supabase db push` — adds the opt-in, the GHL contact id and the `sms_log` table.
+2. In the GHL sub-account: **Settings → Private Integrations → Create**, with the scopes
+   `contacts.readonly`, `contacts.write` and `conversations/message.write`. Copy the token.
+3. The sub-account's **Location ID** (Settings → Business Profile).
+4. In `.env.local` and your host's settings:
+
+```bash
+GHL_PRIVATE_TOKEN=pit-xxxxxxxx
+GHL_LOCATION_ID=xxxxxxxx
+NEXT_PUBLIC_BASE_URL=https://your-ledger.example.com   # for the View link
+```
+
+Texts go from the sub-account's own number, under its A2P registration, and show in the
+contact's conversation in GHL. The number comes from the affiliate's own profile — a lead
+is never texted — and the matching GHL contact is found by that number, or created, and
+tagged `ledger-affiliate`. An existing contact's name and details are never changed.
+
+**Only affiliates who ticked "Text me when an approval comes in"** on their details are
+texted. Existing affiliates tick it from their profile. A reply of STOP marks them
+do-not-disturb in GHL, which then refuses further texts.
+
+No amounts, like Slack. A text that fails never stops an approval: the approval is written
+first, and the sync screen says who was texted, who was not and why. Each affiliate's page
+under People shows their opt-in and last ten texts.
+
+**Testing:** set `SMS_TEST_NUMBER=+15551234567` and every text goes to that number instead,
+prefixed `[TEST for <name>]`, without needing anybody's opt-in. Remove it to go live.
+
+    npx tsx scripts/sms-checks.ts
+
 ## What a click does
 
 A visit is recorded server-side and the visitor is **forwarded straight to the

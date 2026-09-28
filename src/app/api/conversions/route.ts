@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { announceApproval } from '@/lib/slack';
+import { smsSummary, textApprovals } from '@/lib/sms';
 import { getStore, statusForError } from '@/lib/store';
 import { conversionInputSchema, fieldErrors } from '@/lib/validate';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
@@ -64,7 +65,18 @@ export async function POST(request: Request) {
       source: 'manual',
     });
 
-    return NextResponse.json({ conversion }, { status: 201 });
+    // And the affiliate, by text, for the same reasons and on the same terms:
+    // after the money, and unable to throw. See lib/sms.
+    const texted = await textApprovals([
+      {
+        usr: conversion.usr,
+        card: '',
+        campaign: link?.campaign || link?.slug || conversion.slug,
+        approvedOn: conversion.approvedOn,
+      },
+    ]);
+
+    return NextResponse.json({ conversion, sms: smsSummary(texted) }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to record the approval' },

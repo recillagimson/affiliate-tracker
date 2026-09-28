@@ -4,10 +4,11 @@ import {
   SESSION_COOKIE,
   sessionCookieOptions,
 } from '@/lib/auth';
-import { actorFor, invalid, jsonBody, nextPath, noteSubmission, storeResponse, str } from '@/lib/onboarding-api';
+import { actorFor, bool, invalid, jsonBody, nextPath, noteSubmission, storeResponse, str } from '@/lib/onboarding-api';
 import { profileProblems } from '@/lib/onboarding';
 import { saveProfile } from '@/lib/onboarding-store';
 import { isSecureRequest } from '@/lib/request';
+import { saveSmsOptIn } from '@/lib/sms-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
     email: str(body, 'email'),
     position: str(body, 'position'),
     mobile: str(body, 'mobile'),
+    smsOptIn: bool(body, 'smsOptIn'),
     password: str(body, 'password'),
     confirmPassword: str(body, 'confirmPassword'),
   };
@@ -50,6 +52,20 @@ export async function POST(request: Request) {
    */
   const problems = profileProblems(input, { passwordSet: state.profile });
   if (Object.keys(problems).length > 0) return invalid(problems);
+
+  /*
+   * The text opt-in first, in its own write on its own columns (see
+   * lib/sms-store). First, because after saveProfile the password may have
+   * moved, and failing then would skip the replacement cookie below and sign
+   * them out. A failure to record a tick is reported — "you are opted in" when
+   * they are not is worse than asking them to save again — but leaving the box
+   * alone on a database without the columns is no reason to refuse step 1.
+   */
+  try {
+    await saveSmsOptIn(viewer.id, input.smsOptIn);
+  } catch (error) {
+    if (input.smsOptIn) return storeResponse(error);
+  }
 
   let passwordChangedAt: string | null;
   try {

@@ -359,6 +359,8 @@ export type ProfileInput = {
   email: string;
   position: string;
   mobile: string;
+  /** Agreed to approval texts. Optional: nothing about step 1 requires it. */
+  smsOptIn?: boolean;
   password: string;
   confirmPassword: string;
 };
