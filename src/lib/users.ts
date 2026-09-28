@@ -20,6 +20,7 @@ import { ENV_ADMIN_ID, type Role } from './auth';
 import { generatePassword, hashPassword, needsRehash, verifyPassword } from './password';
 import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './store/errors';
 import { getSupabaseClient, isSupabaseConfigured } from './store/supabase';
+import { accessRole, type PersonRole } from './roles';
 import { newTrackingKey } from './tracking-key';
 
 /** What the UI is allowed to see. The hash never leaves this module. */
@@ -435,6 +436,109 @@ export async function deleteUser(id: string): Promise<void> {
     .maybeSingle();
   if (error) fail('deleting a user', error);
   if (!data) throw new StoreNotFoundError('That account no longer exists.');
+}
+
+/* ------------------------------------------------------------------ */
+/* LGF employees                                                         */
+/* ------------------------------------------------------------------ */
+
+/*
+ * lgf_employee is read on its own rather than added to PUBLIC_COLUMNS. Those
+ * are read on every request, sign-in included, so a database whose migrations
+ * are behind would lock everybody out over a label. Here it only costs the
+ * label. See lib/roles.ts for what the column means.
+ */
+
+/**
+ * The tracking keys that earn no affiliate share: LGF employees'. Every
+ * approval on one of these is the company's in full. See lib/analytics
+ * shareFor, which is where this list is applied.
+ *
+ * Unlike the label reads below, a failure here is thrown: this list changes
+ * what people are paid, and quietly treating an employee as an affiliate would
+ * price their approvals as payable. A database without the column has no
+ * employees to list, so that one case is an empty list.
+ */
+export async function listNoShareKeys(): Promise<Set<string>> {
+  if (!usersEnabled()) return new Set();
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .select('usr')
+    .eq('role', 'affiliate')
+    .eq('lgf_employee', true);
+  if (error) {
+    if (['42703', 'PGRST204'].includes(error.code ?? '')) return new Set();
+    fail('reading which accounts earn no share', error);
+  }
+  return new Set(
+    (data ?? []).map((row) => String((row as { usr: string }).usr ?? '')).filter(Boolean),
+  );
+}
+
+/** Which accounts are LGF employees. Empty, not an error, if it cannot be read. */
+export async function listLgfEmployeeIds(): Promise<Set<string>> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient().from('users').select('id').eq('lgf_employee', true);
+  if (error) return new Set();
+  return new Set((data ?? []).map((row) => String((row as { id: string }).id)));
+}
+
+export async function isLgfEmployee(id: string): Promise<boolean> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .select('lgf_employee')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) return false;
+  return Boolean((data as { lgf_employee?: boolean } | null)?.lgf_employee);
+}
+
+export async function setLgfEmployee(id: string, lgfEmployee: boolean): Promise<void> {
+  requireUsers();
+  const { error } = await getSupabaseClient().from('users').update({ lgf_employee: lgfEmployee }).eq('id', id);
+  if (error) fail('saving the role', error);
+}
+
+/**
+ * Change what somebody is: admin, affiliate or LGF employee.
+ *
+ * Made an admin, they keep their tracking key: their links, leads and earnings
+ * are recorded against it, and an admin simply stops being scoped to it. Made
+ * an affiliate from an admin with no key, they are given one, because an
+ * affiliate without one would see nothing and the database refuses it anyway.
+ *
+ * The guards against locking the app out (yourself, the last admin) are the
+ * route's, where the other account guards are.
+ */
+export async function setUserRole(id: string, role: PersonRole): Promise<UserAccount> {
+  requireUsers();
+  const current = await findUserById(id);
+  if (!current) throw new StoreNotFoundError('That account no longer exists.');
+
+  for (let attempt = 1; ; attempt += 1) {
+    const patch: Record<string, unknown> = {
+      role: accessRole(role),
+      lgf_employee: role === 'lgf_employee',
+    };
+    if (role !== 'admin' && !current.usr) patch.usr = newTrackingKey();
+
+    const { data, error } = await getSupabaseClient()
+      .from('users')
+      .update(patch)
+      .eq('id', id)
+      .select(PUBLIC_COLUMNS)
+      .maybeSingle();
+
+    if (!error) {
+      if (!data) throw new StoreNotFoundError('That account no longer exists.');
+      return toAccount(data as Omit<UserRow, 'password_hash'>);
+    }
+    const isKeyCollision =
+      error.code === '23505' &&
+      `${error.message} ${error.details ?? ''}`.includes('users_usr_key');
+    if (!isKeyCollision || !patch.usr || attempt >= KEY_ATTEMPTS) fail('changing the role', error);
+  }
 }
 
 /** The env account is not a row and can never be edited through the UI. */

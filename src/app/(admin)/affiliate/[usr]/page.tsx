@@ -88,7 +88,8 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   // fact about who else works here and what their key is.
   if (!ownsKey(viewer, usr)) notFound();
 
-  const { links, submissions, visits, conversions, gross, settings, error } = await loadAll(viewer);
+  const { links, submissions, visits, conversions, gross, settings, noShare, error } =
+    await loadAll(viewer);
   if (error) {
     return <ErrorPanel title="Could not read your data" message={error} />;
   }
@@ -99,7 +100,8 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   // person" — only a key that has never been seen at all is a 404.
   // As on the dashboard: each approval at the rate in force the day it was
   // approved, so a change to the percentage never restates this page.
-  const money = { shares: settings.shares, gross };
+  // noShare: an LGF employee's approvals pay no share. See shareFor.
+  const money = { shares: settings.shares, gross, noShare };
 
   const everView = buildEarnings(links, visits, conversions, {
     period: 'all',
@@ -159,10 +161,11 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   // for a lead approved before leads kept one, the cards its approvals name.
   const cardsApproved = approvedCards(conversions);
   // Approve on the leads list, for an admin. See the dashboard.
-  const approving = isAdmin && theirLeads.length > 0 ? await loadApproveContext(settings.shares) : undefined;
+  const approving = isAdmin && theirLeads.length > 0 ? await loadApproveContext(settings.shares, noShare) : undefined;
 
   const leadRows: LeadRow[] = theirLeads.slice(0, RECENT_LEADS).map((row) => ({
     id: row.id,
+    usr: row.usr,
     fullName: row.fullName,
     email: row.email,
     phone: row.phone,

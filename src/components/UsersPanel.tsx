@@ -11,11 +11,14 @@ import { TableScroller } from './TableScroller';
 import { BusyLabel } from './Spinner';
 import { ApprovalPill } from './ApprovalPill';
 import { awaitingReview, isBypassed, NO_BYPASS, type Approval, type Bypass } from '@/lib/approval';
+import { PERSON_ROLES, personRole, ROLE_LABELS, type PersonRole } from '@/lib/roles';
 
 export type AccountRow = {
   id: string;
   username: string;
   role: 'admin' | 'affiliate';
+  /** An affiliate who is an LGF employee. Shown as its own role; see lib/roles. */
+  lgfEmployee?: boolean;
   usr: string;
   fullName: string;
   email: string;
@@ -33,12 +36,12 @@ export type AccountRow = {
 
 type Fields = {
   username: string;
-  role: 'admin' | 'affiliate';
+  role: PersonRole;
   fullName: string;
   email: string;
 };
 
-type RoleFilter = 'all' | 'admin' | 'affiliate';
+type RoleFilter = 'all' | PersonRole;
 
 const EMPTY: Fields = { username: '', role: 'affiliate', fullName: '', email: '' };
 
@@ -86,7 +89,7 @@ export function matchAccounts(
 ): AccountRow[] {
   const needle = query.trim().toLowerCase();
   return rows.filter((row) => {
-    if (role !== 'all' && row.role !== role) return false;
+    if (role !== 'all' && personRole(row.role, Boolean(row.lgfEmployee)) !== role) return false;
     if (status !== 'all') {
       // An admin has no approval state, so any status filter excludes them
       // rather than silently treating "no answer" as a match.
@@ -157,6 +160,13 @@ export function UsersPanel({
   const [status, setStatus] = useState<StatusFilter>('all');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
+  /* Ticked for a bulk role change. Kept across pages and filters, so an admin
+     can gather people from several searches and change them in one go; the bar
+     says how many are ticked, so nothing is changed that is out of sight
+     without being counted. Your own account cannot be ticked. */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkRole, setBulkRole] = useState<PersonRole>('lgf_employee');
+  const [notice, setNotice] = useState<string | null>(null);
   const issuedRef = useRef<HTMLDivElement | null>(null);
   const formRef = useRef<HTMLInputElement | null>(null);
 
@@ -184,6 +194,75 @@ export function UsersPanel({
    * pageSlice clamps that back to the last page there is.
    */
   const visible = pageSlice(matched, page, perPage);
+  const tickable = visible.filter((row) => row.id !== viewerId);
+  const pageState =
+    tickable.length > 0 && tickable.every((row) => selected.has(row.id))
+      ? 'all'
+      : tickable.some((row) => selected.has(row.id))
+        ? 'some'
+        : 'none';
+
+  function toggle(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function togglePage() {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const row of tickable) {
+        if (pageState === 'all') next.delete(row.id);
+        else next.add(row.id);
+      }
+      return next;
+    });
+  }
+
+  async function applyBulkRole() {
+    const ids = [...selected];
+    const people = ids.length === 1 ? '1 person' : `${ids.length} people`;
+    const demotesAdmin = rows.some((row) => selected.has(row.id) && row.role === 'admin');
+    const warning =
+      bulkRole === 'admin'
+        ? ' They will see everybody’s numbers.'
+        : demotesAdmin
+          ? ' Any admins among them will lose admin.'
+          : '';
+    if (!confirm(`Set ${people} to ${ROLE_LABELS[bulkRole]}?${warning}`)) return;
+
+    setBusy('bulk');
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch('/api/users/roles', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids, role: bulkRole }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.error || 'Could not change the roles.');
+        return;
+      }
+      const skipped: { name: string; reason: string }[] = data.skipped ?? [];
+      setNotice(
+        `${data.updated} set to ${ROLE_LABELS[bulkRole]}.` +
+          (skipped.length
+            ? ` Not changed: ${skipped.map((row) => `${row.name} (${row.reason})`).join('; ')}.`
+            : ''),
+      );
+      setSelected(new Set());
+      router.refresh();
+    } catch {
+      setError('Could not reach the server.');
+    } finally {
+      setBusy(null);
+    }
+  }
 
   // Move focus to the password the moment it appears. It is shown exactly once,
   // so a screen reader user must not have to go looking for it, and a sighted
@@ -238,6 +317,9 @@ export function UsersPanel({
         usr: data.user.usr || undefined,
       });
       setFields(EMPTY);
+      // Created, but not quite as asked: an LGF employee whose marker did not
+      // save. Said in the page's alert, which is where the admin is looking.
+      if (data.warning) setError(data.warning);
       // Closed on success only. A failed submit keeps the form open with what
       // was typed still in it.
       setAdding(false);
@@ -350,7 +432,7 @@ export function UsersPanel({
     }
   }
 
-  const affiliate = fields.role === 'affiliate';
+  const affiliate = fields.role !== 'admin';
 
   return (
     <div className="w-full">
@@ -412,8 +494,9 @@ export function UsersPanel({
               <div className="mt-1.5 flex flex-wrap gap-2.5">
                 {(
                   [
-                    ['affiliate', 'Their own links only'],
-                    ['admin', 'Everything, and can add people'],
+                    ['affiliate', 'Affiliate: their own links only'],
+                    ['lgf_employee', 'LGF - Employee: their own links only'],
+                    ['admin', 'Admin: everything, and can add people'],
                   ] as const
                 ).map(([value, label]) => (
                   <label
@@ -516,8 +599,9 @@ export function UsersPanel({
             className="field w-auto"
           >
             <option value="all">All roles</option>
-            <option value="admin">Admin</option>
-            <option value="affiliate">Affiliate</option>
+            <option value="admin">{ROLE_LABELS.admin}</option>
+            <option value="affiliate">{ROLE_LABELS.affiliate}</option>
+            <option value="lgf_employee">{ROLE_LABELS.lgf_employee}</option>
           </select>
 
           <label className="sr-only" htmlFor="account-status">
@@ -552,6 +636,47 @@ export function UsersPanel({
           </button>
         </div>
 
+        {selected.size > 0 ? (
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-edge bg-paper-card px-5 py-3">
+            <span className="text-[13px] font-medium">{selected.size} selected</span>
+            <label className="sr-only" htmlFor="bulk-role">
+              Role to set
+            </label>
+            <span className="text-[13px] text-ink-soft">Set role to</span>
+            <select
+              id="bulk-role"
+              className="field w-auto"
+              value={bulkRole}
+              disabled={busy === 'bulk'}
+              onChange={(e) => setBulkRole(e.target.value as PersonRole)}
+            >
+              {PERSON_ROLES.map((value) => (
+                <option key={value} value={value}>
+                  {ROLE_LABELS[value]}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn-gold btn-sm"
+              disabled={busy === 'bulk'}
+              onClick={applyBulkRole}
+            >
+              <BusyLabel busy={busy === 'bulk'} idle="Apply" busyLabel="Saving…" />
+            </button>
+            <button
+              type="button"
+              className="btn-outline btn-sm"
+              disabled={busy === 'bulk'}
+              onClick={() => setSelected(new Set())}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+
+        {notice ? <p className="plain-note border-b border-edge px-5 py-3">{notice}</p> : null}
+
         {rows.length === 0 ? (
           <p className="px-5 py-16 text-center text-[13px] text-ink-soft">
             Nobody yet. You are signed in as <strong>{viewerUsername}</strong>, which comes from the
@@ -566,6 +691,22 @@ export function UsersPanel({
             <table className="w-full min-w-[1300px] border-collapse text-left">
               <thead>
                 <tr className="bg-paper-card">
+                  <th scope="col" className="w-[56px] border-b border-edge px-2 py-0.5">
+                    {/* The whole cell is the target: 44px is what a thumb hits. */}
+                    <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center">
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5"
+                        aria-label="Select everyone on this page"
+                        checked={pageState === 'all'}
+                        ref={(element) => {
+                          if (element) element.indeterminate = pageState === 'some';
+                        }}
+                        disabled={tickable.length === 0 || busy === 'bulk'}
+                        onChange={togglePage}
+                      />
+                    </label>
+                  </th>
                   <Th>Username</Th>
                   <Th>Name</Th>
                   <Th>Role</Th>
@@ -582,6 +723,22 @@ export function UsersPanel({
                   const working = busy === row.id;
                   return (
                     <tr key={row.id} className="divider-row last:border-0">
+                      <td className="px-2 py-0.5">
+                        <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center">
+                          <input
+                            type="checkbox"
+                            className="h-5 w-5"
+                            aria-label={
+                              isSelf
+                                ? 'Your own account cannot be changed in bulk'
+                                : `Select ${row.username}`
+                            }
+                            checked={selected.has(row.id)}
+                            disabled={isSelf || busy === 'bulk'}
+                            onChange={() => toggle(row.id)}
+                          />
+                        </label>
+                      </td>
                       <td className="px-5 py-3.5">
                         <span className="flex items-center gap-2">
                           <span className="tnum text-[13px] font-medium">{row.username}</span>
@@ -605,7 +762,7 @@ export function UsersPanel({
                           <span
                             className={`chip chip-quiet ${row.role === 'admin' ? 'text-ink' : ''}`}
                           >
-                            {row.role === 'admin' ? 'Admin' : 'Affiliate'}
+                            {ROLE_LABELS[personRole(row.role, Boolean(row.lgfEmployee))]}
                           </span>
                           {/* Disabled is the state worth interrupting for: the
                               account is still listed and still cannot sign in. */}

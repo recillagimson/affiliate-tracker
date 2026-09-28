@@ -15,6 +15,7 @@ import {
   affiliateHref,
   buildEarnings,
   describeConversions,
+  earningsTotals,
   formatDateTime,
   formatMoney,
   formatRelative,
@@ -67,7 +68,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // Already cut to this viewer's tracking key. Everything below counts, sums
   // and charts whatever came back, so scoping once here is what makes every
   // figure on the page theirs.
-  const { links, submissions, visits, conversions, gross, settings, error } = await loadAll(viewer);
+  const { links, submissions, visits, conversions, gross, settings, noShare, error } =
+    await loadAll(viewer);
 
   if (error) {
     return <ErrorPanel title="Could not read your data" message={error} />;
@@ -82,12 +84,36 @@ export default async function DashboardPage({ searchParams }: PageProps) {
    * percentage on the settings page moves what new work is worth and leaves
    * this page's history alone.
    */
-  const money = { shares: settings.shares, gross };
+  // noShare: LGF employees' keys. Their approvals pay no affiliate share, so
+  // Company Keep is the whole payout on every one of them.
+  const money = { shares: settings.shares, gross, noShare };
   const earningsAll = buildEarnings(links, visits, conversions, { period, month, ...money });
   const usr = earningsAll.people.some((p) => p.usr === requestedUsr) ? requestedUsr : '';
   const view = usr
     ? buildEarnings(links, visits, conversions, { period, month, usr, ...money })
     : earningsAll;
+
+  /*
+   * Who is earning, as two tabs for an admin: affiliates, who are paid a
+   * share, and LGF employees, whose approvals the company keeps. In the URL
+   * like the period, so a tab survives a refresh and can be linked to.
+   */
+  const earnersTab = isAdmin && firstValue(query.earners) === 'employee' ? 'employee' : 'affiliate';
+  const earnerGroups = {
+    affiliate: view.rows.filter((row) => !noShare.has(row.usr)),
+    employee: view.rows.filter((row) => noShare.has(row.usr)),
+  };
+  const earnerRows = isAdmin ? earnerGroups[earnersTab] : view.rows;
+  const earnerTotals = isAdmin ? earningsTotals(earnerRows) : view.totals;
+  const tabHref = (tab: 'affiliate' | 'employee') => {
+    const params = new URLSearchParams();
+    if (month) params.set('month', month);
+    else if (period !== 'month') params.set('period', period);
+    if (usr) params.set('usr', usr);
+    if (tab === 'employee') params.set('earners', 'employee');
+    const search = params.toString();
+    return `${search ? `/?${search}` : '/'}#who-is-earning`;
+  };
 
   const hasAnything = links.length > 0 || visits.length > 0 || conversions.length > 0;
   if (!hasAnything) {
@@ -140,6 +166,19 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     money,
   );
 
+  /*
+   * An admin reads the approvals as two tables: the affiliates', which pay a
+   * share, and the LGF employees', which the company keeps in full. House
+   * approvals (no key) sit with the affiliates', as they always have. An
+   * affiliate or employee sees only their own, so one table.
+   */
+  const employeeApprovals = isAdmin ? recentApprovals.filter((row) => noShare.has(row.usr)) : [];
+  const affiliateApprovals = isAdmin
+    ? recentApprovals.filter((row) => !noShare.has(row.usr))
+    : recentApprovals;
+  const employeeTotal = isAdmin ? conversions.filter((row) => noShare.has(row.usr)).length : 0;
+  const affiliateTotal = conversions.length - employeeTotal;
+
   // Who the approvals below name. Worked out once for the whole list rather
   // than per row, and from every approval rather than the page's slice, so a
   // lead reads approved whether the approval was imported this morning or six
@@ -152,11 +191,12 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
   // Approve on the leads list, for an admin: the rate card to pick the card
   // from and the commission history to show the affiliate's share.
-  const approving = isAdmin && capture ? await loadApproveContext(settings.shares) : undefined;
+  const approving = isAdmin && capture ? await loadApproveContext(settings.shares, noShare) : undefined;
 
   const leadRows: LeadRow[] = capture
     ? submissions.slice(0, RECENT_LIMIT).map((row) => ({
         id: row.id,
+        usr: row.usr,
         fullName: row.fullName,
         email: row.email,
         phone: row.phone,
@@ -267,22 +307,50 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
           <h2 className="font-display text-[18px]">Who is earning</h2>
           <span className="text-[13px] text-ink-soft">
-            {view.rows.length} {view.rows.length === 1 ? 'person' : 'people'} ·{' '}
+            {earnerRows.length} {earnerRows.length === 1 ? 'person' : 'people'} ·{' '}
             {windowLabel}
           </span>
         </div>
-        <p className="plain mt-2">
-          One row per person. Open a row to see the cards behind their numbers.
+        {isAdmin ? (
+          <div className="mt-4 flex flex-wrap gap-2.5">
+            {(
+              [
+                ['affiliate', 'Affiliates'],
+                ['employee', 'LGF - Employee'],
+              ] as const
+            ).map(([tab, label]) => (
+              <Link
+                key={tab}
+                href={tabHref(tab)}
+                scroll={false}
+                className="pill-filter relative"
+                data-active={earnersTab === tab}
+                aria-current={earnersTab === tab ? 'page' : undefined}
+              >
+                {label} ({earnerGroups[tab].length})
+                <LinkPending />
+              </Link>
+            ))}
+          </div>
+        ) : null}
+        <p className="plain mt-3">
+          {isAdmin && earnersTab === 'employee'
+            ? 'LGF employees earn no affiliate share: the company keeps the whole payout. Open a row to see the cards behind their numbers.'
+            : 'One row per person. Open a row to see the cards behind their numbers.'}
         </p>
 
-        {view.rows.length === 0 ? (
+        {earnerRows.length === 0 ? (
           <p className="py-12 text-center text-[13px] text-ink-soft">
-            Nothing in this window. Try a longer period{usr ? ' or everyone' : ''}.
+            {isAdmin && view.rows.length > 0
+              ? `Nobody on this tab in this window.`
+              : `Nothing in this window. Try a longer period${usr ? ' or everyone' : ''}.`}
           </p>
         ) : (
           <EarnersTable
-            rows={view.rows}
-            totals={view.totals}
+            // A new list resets the table's own page back to the first.
+            key={earnersTab}
+            rows={earnerRows}
+            totals={earnerTotals}
             period={period}
             month={month}
             gross={gross}
@@ -294,13 +362,13 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       <section className="rise panel mt-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
           <div>
-            <h2 className="font-display text-[18px]">Approvals</h2>
+            <h2 className="font-display text-[18px]">{isAdmin ? 'Affiliate approvals' : 'Approvals'}</h2>
             <p className="plain mt-1">
-              {conversions.length > recentApprovals.length
-                ? `Latest ${recentApprovals.length} of ${conversions.length.toLocaleString()}.`
-                : `${conversions.length} recorded · all time.`}{' '}
+              {affiliateTotal > affiliateApprovals.length
+                ? `Latest ${affiliateApprovals.length} of ${affiliateTotal.toLocaleString()}.`
+                : `${affiliateTotal} recorded · all time.`}{' '}
               {isAdmin
-                ? 'Nothing adds these on its own.'
+                ? 'The affiliate earns their share of each. Nothing adds these on its own.'
                 : 'Recorded by your admin as the merchant confirms them.'}
             </p>
           </div>
@@ -308,7 +376,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         </div>
 
         <ApprovalsList
-          rows={recentApprovals}
+          rows={affiliateApprovals}
           canEdit={isAdmin}
           gross={gross}
           empty={
@@ -318,6 +386,24 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           }
         />
       </section>
+
+      {isAdmin ? (
+        <section className="rise panel mt-5 p-6 sm:p-8">
+          <h2 className="font-display text-[18px]">LGF - Employee approvals</h2>
+          <p className="plain mt-1">
+            {employeeTotal > employeeApprovals.length
+              ? `Latest ${employeeApprovals.length} of ${employeeTotal.toLocaleString()}.`
+              : `${employeeTotal} recorded · all time.`}{' '}
+            LGF employees earn no affiliate share: the company keeps the whole payout.
+          </p>
+          <ApprovalsList
+            rows={employeeApprovals}
+            canEdit={isAdmin}
+            gross={gross}
+            empty="None recorded against an LGF employee's links yet."
+          />
+        </section>
+      ) : null}
 
       {/* Lead capture, only while the form is switched on */}
       {capture ? (

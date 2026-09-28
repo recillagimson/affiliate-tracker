@@ -8,6 +8,7 @@ import { formatDateTime, formatMoney } from '@/lib/analytics';
 import { cardsBelowFloor, ratesAboveFloor, ratesForViewer } from '@/lib/cpa';
 import { currentShare, defaultSettings, formatShare, type Settings } from '@/lib/settings';
 import { getStore } from '@/lib/store';
+import { listNoShareKeys } from '@/lib/users';
 import { requireViewer } from '@/lib/viewer';
 import type { CpaReport } from '@/lib/types';
 
@@ -56,6 +57,9 @@ export default async function CpaPage() {
   // Only what the table draws crosses to the browser, and for an affiliate that
   // is their half alone — the merchant's rates never reach the page at all.
   const rows = ratesForViewer(rates, isAdmin);
+  // An LGF employee earns no share, so "what you earn" would not be true of them.
+  const employee =
+    !isAdmin && Boolean(viewer.usr) && (await listNoShareKeys().catch(() => new Set<string>())).has(viewer.usr);
 
   return (
     <div className="w-full">
@@ -67,8 +71,10 @@ export default async function CpaPage() {
           {/* The share is a setting now, so the sentence reads it rather than
               saying "half" whatever it has been changed to. */}
           {isAdmin
-            ? `What each card pays for an approval, and ${formatShare(share)} of it beside, which is what the affiliate keeps.`
-            : 'What you earn for an approval on each card.'}{' '}
+            ? `What each card pays for an approval, and ${formatShare(share)} of it beside, which is what the affiliate keeps. LGF employees keep none of it.`
+            : employee
+              ? 'What an affiliate earns for an approval on each card. As an LGF - Employee you earn no affiliate share: the company keeps the whole payout.'
+              : 'What you earn for an approval on each card.'}{' '}
           Where a card is tiered, every tier is listed separately, because the tier is what decides
           the payout.
         </p>

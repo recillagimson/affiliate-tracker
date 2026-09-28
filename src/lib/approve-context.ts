@@ -10,13 +10,17 @@ import { getStore } from './store';
  * the leads are still worth reading, and the form falls back to a typed card
  * and payout, the way it does before a rate card has ever been uploaded.
  */
-export async function loadApproveContext(shares: ShareRate[]): Promise<ApproveContext> {
+export async function loadApproveContext(
+  shares: ShareRate[],
+  noShare: ReadonlySet<string> = new Set(),
+): Promise<ApproveContext> {
   const report = await getStore()
     .readCpaReport()
     .catch(() => null);
   return {
     choices: rateChoices(report?.rows ?? []),
     shares,
+    noShare: [...noShare],
     // UTC, the clock every approval day in the app is kept in.
     today: new Date().toISOString().slice(0, 10),
   };

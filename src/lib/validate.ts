@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PERSON_ROLES } from './roles';
 import { isSendableUrl } from './campaigns';
 import { RESERVED_SLUGS } from './config';
 import { LEAD_STATUSES } from './status';
@@ -227,7 +228,7 @@ export const usernameSchema = z
  */
 export const newUserSchema = z.object({
   username: usernameSchema,
-  role: z.enum(['admin', 'affiliate']),
+  role: z.enum(PERSON_ROLES),
   fullName: z.string().trim().max(120).optional().default(''),
   email: z
     .union([z.literal(''), z.string().trim().email('Enter a valid email')])
@@ -237,9 +238,18 @@ export const newUserSchema = z.object({
 
 export type NewUserInput = z.infer<typeof newUserSchema>;
 
-/** The three things an admin may do to an existing account. */
-export const userPatchSchema = z.object({
-  action: z.enum(['reset-password', 'enable', 'disable']),
+/** The things an admin may do to an existing account. Only a role change carries more. */
+export const userPatchSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('reset-password') }),
+  z.object({ action: z.literal('enable') }),
+  z.object({ action: z.literal('disable') }),
+  z.object({ action: z.literal('set-role'), role: z.enum(PERSON_ROLES) }),
+]);
+
+/** One role for several people, from the People list. */
+export const bulkRoleSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, 'Tick at least one person').max(500),
+  role: z.enum(PERSON_ROLES),
 });
 
 /**

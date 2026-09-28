@@ -132,7 +132,8 @@ function byDay(a: string, b: string): number {
  * A viewer's own approvals, split into what can be requested now and what is
  * still counting down, each oldest approval first.
  *
- * Three kinds of row are in neither list. A card already committed to a live
+ * Four kinds of row are in neither list. One worth nothing to its affiliate
+ * (an LGF employee's, see shareFor) has nothing to ask for. A card already committed to a live
  * request is spoken for, however old it is. A house card (usr '') belongs to no
  * account, so nobody can ever ask for it and showing it as ready would promise
  * something the request check refuses. And a card with no readable approval day
@@ -152,6 +153,9 @@ export function splitByReadiness<T extends Candidate>(
   const countingDown: (T & { daysLeft: number })[] = [];
   for (const row of rows) {
     if (!row.usr || committed.has(row.id)) continue;
+    // Nothing to ask for: an LGF employee's approval, whose share is the
+    // company's, or one the merchant paid nothing for.
+    if (!(row.amount > 0)) continue;
     const left = daysUntilEligible(row.approvedOn, today);
     if (!Number.isFinite(left)) continue;
     if (left <= 0) ready.push(row);

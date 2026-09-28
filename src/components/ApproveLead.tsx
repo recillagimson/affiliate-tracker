@@ -10,6 +10,8 @@ import { formatShare, shareOn, type ShareRate } from '@/lib/settings';
 export type ApproveContext = {
   choices: RateChoice[];
   shares: ShareRate[];
+  /** LGF employees' tracking keys: their leads earn no share. */
+  noShare?: string[];
   /** The server's today, so the default approval day cannot disagree with it at midnight. */
   today: string;
 };
@@ -30,12 +32,14 @@ export function ApproveLead({
   onDone,
   onCancel,
 }: {
-  lead: { id: string; fullName: string; email: string; assignee: string; card: string };
+  lead: { id: string; fullName: string; email: string; assignee: string; card: string; usr?: string };
   context: ApproveContext;
   onDone: (message: string) => void;
   onCancel: () => void;
 }) {
   const { choices, shares, today } = context;
+  // An LGF employee's lead pays them nothing: the company keeps it all.
+  const employee = Boolean(lead.usr && context.noShare?.includes(lead.usr));
   const start = preselectChoice(lead.card, choices);
   const [choiceIndex, setChoiceIndex] = useState(start);
   // A card with one rate keeps it under the tier '', so starting every card on
@@ -206,11 +210,19 @@ export function ApproveLead({
       </div>
 
       {value !== null && Number.isFinite(value) && value >= 0 ? (
-        <p className="plain mt-4">
-          {affiliate} earns <strong>{formatMoney(affiliateCut(value, approvedOn, shares))}</strong> (
-          {formatShare(shareOn(approvedOn, shares))} of {formatMoney(value)}). When QMP reports this
-          approval, the sync puts in what QMP paid.
-        </p>
+        employee ? (
+          <p className="plain mt-4">
+            {affiliate} is an LGF - Employee and earns no share: the company keeps all{' '}
+            <strong>{formatMoney(value)}</strong>. When QMP reports this approval, the sync puts in
+            what QMP paid.
+          </p>
+        ) : (
+          <p className="plain mt-4">
+            {affiliate} earns <strong>{formatMoney(affiliateCut(value, approvedOn, shares))}</strong> (
+            {formatShare(shareOn(approvedOn, shares))} of {formatMoney(value)}). When QMP reports
+            this approval, the sync puts in what QMP paid.
+          </p>
+        )
       ) : null}
 
       <div className="mt-5 flex flex-wrap items-center gap-4">

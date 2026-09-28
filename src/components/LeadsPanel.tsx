@@ -22,6 +22,8 @@ import type { LeadStatus } from '@/lib/types';
  */
 export type LeadRow = {
   id: string;
+  /** Whose link it came through. Decides, among other things, whether it pays a share. */
+  usr?: string;
   fullName: string;
   email: string;
   phone: string;

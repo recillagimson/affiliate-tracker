@@ -14,7 +14,9 @@ import { readAgreement, readBank, readProgress, readW9 } from '@/lib/onboarding-
 import { toE164 } from '@/lib/phone';
 import { smsConfigured, testNumber } from '@/lib/sms';
 import { readSmsSettings, recentTexts } from '@/lib/sms-store';
-import { findUserById, usersEnabled } from '@/lib/users';
+import { RoleSelect } from '@/components/RoleSelect';
+import { personRole } from '@/lib/roles';
+import { findUserById, isLgfEmployee, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -33,7 +35,7 @@ export const metadata: Metadata = { title: 'Onboarding record' };
  * of Social Security numbers that happens to be behind a login.
  */
 export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin();
+  const viewer = await requireAdmin();
   const { id } = await params;
 
   if (!usersEnabled()) {
@@ -57,6 +59,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     readSmsSettings(id).catch(() => null),
     recentTexts(id).catch(() => null),
   ]);
+  const lgfEmployee = account.role === 'affiliate' && (await isLgfEmployee(id).catch(() => false));
   const state = progress?.state ?? null;
   const approval = progress?.approval ?? { ...UNREVIEWED };
   const bypass = progress?.bypass ?? { ...NO_BYPASS };
@@ -95,6 +98,22 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           {account.email ? ` · ${account.email}` : ''}
         </p>
       </div>
+
+      <section className="panel mt-5 p-6 sm:p-7">
+        <h2 className="text-[15px] font-semibold">Role</h2>
+        <div className="mt-3">
+          <RoleSelect
+            // Remounted when the saved role changes, so the dropdown starts
+            // from what is on file after a save rather than what was picked.
+            key={personRole(account.role, lgfEmployee)}
+            userId={account.id}
+            current={personRole(account.role, lgfEmployee)}
+            lockedReason={
+              account.id === viewer.id ? 'This is your account. Another admin can change your role.' : ''
+            }
+          />
+        </div>
+      </section>
 
       {/* Step 1 */}
       <section className="panel mt-5 p-6 sm:p-7">

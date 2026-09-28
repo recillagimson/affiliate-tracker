@@ -5,7 +5,7 @@ import { authConfigured } from '@/lib/auth';
 import { NO_BYPASS, UNREVIEWED } from '@/lib/approval';
 import { NOTHING_DONE } from '@/lib/onboarding';
 import { listOnboarding } from '@/lib/onboarding-store';
-import { listUsers, usersEnabled } from '@/lib/users';
+import { listLgfEmployeeIds, listUsers, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -73,12 +73,17 @@ export default async function UsersPage() {
     onboardingRead = false;
   }
 
+  // Which affiliates are LGF employees. Empty rather than an error when it
+  // cannot be read: everybody then shows as admin or affiliate, which is true.
+  const lgfEmployees = await listLgfEmployeeIds().catch(() => new Set<string>());
+
   let rows: AccountRow[];
   try {
     rows = (await listUsers()).map((user) => ({
       id: user.id,
       username: user.username,
       role: user.role,
+      lgfEmployee: user.role === 'affiliate' && lgfEmployees.has(user.id),
       usr: user.usr,
       fullName: user.fullName,
       email: user.email,
@@ -116,8 +121,9 @@ export default async function UsersPage() {
       <div className="rise">
         <h1 className="font-display leading-[1.05] text-[26px]">People</h1>
         <p className="mt-3 max-w-[680px] text-[13px] leading-relaxed text-ink-soft">
-          Everyone who can sign in. An affiliate account is tied to one tracking key and sees only
-          the links, leads and earnings recorded against it. An admin sees all of it.
+          Everyone who can sign in. An affiliate or LGF - Employee account is tied to one tracking
+          key and sees only the links, leads and earnings recorded against it. An admin sees all of
+          it. Change somebody&rsquo;s role from their page.
         </p>
         {viewer.isEnvAdmin ? (
           <p className="plain-note mt-4 max-w-[680px]">

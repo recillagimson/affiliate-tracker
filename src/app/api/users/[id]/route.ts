@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
+import type { PersonRole } from '@/lib/roles';
 import { statusForError } from '@/lib/store';
 import { fieldErrors, userPatchSchema } from '@/lib/validate';
 import {
@@ -9,6 +10,7 @@ import {
   isEnvAdminId,
   resetUserPassword,
   setUserActive,
+  setUserRole,
   usersEnabled,
 } from '@/lib/users';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
@@ -31,15 +33,29 @@ type Context = { params: Promise<{ id: string }> };
  *     press is not a design, it is a hope.
  */
 async function blockedReason(
-  action: 'reset-password' | 'enable' | 'disable',
+  action: 'reset-password' | 'enable' | 'disable' | 'set-role',
   targetId: string,
   target: { role: string; active: boolean },
   viewerId: string,
+  newRole?: PersonRole,
 ): Promise<string | null> {
   const isSelf = targetId === viewerId;
 
   if (isSelf && action === 'disable') {
     return 'You cannot disable your own account. Ask another admin.';
+  }
+
+  // The same hazard as disabling yourself: an admin who makes themselves an
+  // affiliate loses this page on their next request.
+  if (isSelf && action === 'set-role') {
+    return 'You cannot change your own role. Ask another admin.';
+  }
+
+  if (action === 'set-role' && newRole !== 'admin' && target.role === 'admin' && target.active) {
+    const admins = await countAdmins();
+    if (admins <= 1) {
+      return 'That is the last active admin. Make somebody else an admin first, then change this one.';
+    }
   }
 
   // Enabling never reduces the number of admins, and resetting a password
@@ -93,8 +109,19 @@ export async function PATCH(request: Request, { params }: Context) {
       return NextResponse.json({ error: 'That account no longer exists.' }, { status: 404 });
     }
 
-    const blocked = await blockedReason(patch.action, id, target, viewer.id);
+    const blocked = await blockedReason(
+      patch.action,
+      id,
+      target,
+      viewer.id,
+      patch.action === 'set-role' ? patch.role : undefined,
+    );
     if (blocked) return forbidden(blocked);
+
+    if (patch.action === 'set-role') {
+      const user = await setUserRole(id, patch.role);
+      return NextResponse.json({ user, role: patch.role });
+    }
 
     if (patch.action === 'reset-password') {
       const { user, password } = await resetUserPassword(id);

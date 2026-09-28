@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
+import { accessRole } from '@/lib/roles';
 import { ZodError } from 'zod';
 import { authConfigured } from '@/lib/auth';
 import { statusForError } from '@/lib/store';
 import { fieldErrors, newUserSchema } from '@/lib/validate';
-import { createUser, listUsers, usersEnabled } from '@/lib/users';
+import { createUser, listUsers, setLgfEmployee, usersEnabled } from '@/lib/users';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
@@ -82,11 +83,33 @@ export async function POST(request: Request) {
   try {
     const { user, password } = await createUser({
       username: input.username,
-      role: input.role,
+      role: accessRole(input.role),
       fullName: input.fullName,
       email: input.email,
       createdBy: viewer.username,
     });
+    /*
+     * An LGF employee is an affiliate with the marker set, written after the
+     * account so that creating an admin or an affiliate never names the column
+     * (see lib/roles). If this write fails the account exists as a plain
+     * affiliate, which is said, and the role can be set from their page.
+     */
+    if (input.role === 'lgf_employee') {
+      try {
+        await setLgfEmployee(user.id, true);
+      } catch (error) {
+        return NextResponse.json(
+          {
+            user,
+            password,
+            warning: `Created as an Affiliate. Could not mark them LGF - Employee: ${
+              error instanceof Error ? error.message : 'unknown error'
+            }`,
+          },
+          { status: 201 },
+        );
+      }
+    }
     // The only time this password is ever readable. It is not stored, not
     // logged, and cannot be fetched again — losing it means resetting it.
     return NextResponse.json({ user, password }, { status: 201 });

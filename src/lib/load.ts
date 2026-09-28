@@ -1,8 +1,9 @@
-import { affiliateRevenueOf } from './analytics';
+import { affiliateRevenueOf, shareFor, type NoShare } from './analytics';
 import { scopeData, seesEverything } from './scope';
-import { defaultSettings, shareOn, type Settings } from './settings';
+import { defaultSettings, type Settings } from './settings';
 import { getStore } from './store';
 import type { AffiliateLink, Conversion, Submission, Visit } from './types';
+import { listNoShareKeys } from './users';
 import type { Viewer } from './viewer';
 
 export type LoadResult = {
@@ -27,6 +28,11 @@ export type LoadResult = {
    * that do not add up.
    */
   settings: Settings;
+  /**
+   * LGF employees' tracking keys. Their approvals pay no affiliate share: the
+   * company keeps all of it. Pass it wherever `settings.shares` goes.
+   */
+  noShare: NoShare;
   error: string | null;
 };
 
@@ -44,14 +50,19 @@ const EMPTY = { links: [], submissions: [], visits: [], conversions: [] };
  * what gets grouped, charted and listed — and because the sum of what they are
  * actually paid per approval is the figure they can check against a payment.
  */
-export function asAffiliateShare(conversions: Conversion[], settings: Settings): Conversion[] {
+export function asAffiliateShare(
+  conversions: Conversion[],
+  settings: Settings,
+  noShare: NoShare = new Set(),
+): Conversion[] {
   return conversions.map((row) => ({
     // At the rate in force on the day it was approved, not the rate in force
     // now. Raising the commission tomorrow must leave every figure an affiliate
     // has already been shown, and already been paid against, exactly where it
     // is.
     ...row,
-    amount: affiliateRevenueOf(row.amount, shareOn(row.approvedOn, settings.shares)),
+    // Nothing at all on an LGF employee's key: see shareFor.
+    amount: affiliateRevenueOf(row.amount, shareFor(row.usr, row.approvedOn, settings.shares, noShare)),
   }));
 }
 
@@ -74,12 +85,13 @@ export function asAffiliateShare(conversions: Conversion[], settings: Settings):
 export async function loadAll(viewer: Viewer | null): Promise<LoadResult> {
   const store = getStore();
   try {
-    const [links, submissions, visits, conversions, settings] = await Promise.all([
+    const [links, submissions, visits, conversions, settings, noShare] = await Promise.all([
       store.listLinks(),
       store.listSubmissions(),
       store.listVisits(),
       store.listConversions(),
       store.readSettings(),
+      listNoShareKeys(),
     ]);
 
     const scoped = scopeData({ links, submissions, visits, conversions }, viewer);
@@ -90,7 +102,7 @@ export async function loadAll(viewer: Viewer | null): Promise<LoadResult> {
      * disagree about who is an admin.
      */
     const gross = seesEverything(viewer);
-    const money = gross ? scoped.conversions : asAffiliateShare(scoped.conversions, settings);
+    const money = gross ? scoped.conversions : asAffiliateShare(scoped.conversions, settings, noShare);
 
     // Newest first for display. Sorted into new arrays: a store adapter may be
     // handing back rows it also caches, and sorting those in place would change
@@ -102,6 +114,7 @@ export async function loadAll(viewer: Viewer | null): Promise<LoadResult> {
       conversions: [...money].sort((a, b) => b.approvedOn.localeCompare(a.approvedOn)),
       gross,
       settings,
+      noShare,
       error: null,
     };
   } catch (error) {
@@ -112,6 +125,7 @@ export async function loadAll(viewer: Viewer | null): Promise<LoadResult> {
       // has no rows to price anyway, and a missing commission history would
       // turn a storage message into a crash.
       settings: defaultSettings(),
+      noShare: new Set(),
       error: error instanceof Error ? error.message : 'Unknown storage error',
     };
   }

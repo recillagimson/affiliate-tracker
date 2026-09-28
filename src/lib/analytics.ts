@@ -604,7 +604,11 @@ export function describeConversions(
   links: AffiliateLink[],
   conversions: Conversion[],
   submissions: Submission[] = [],
-  { shares = [], gross = true }: { shares?: ShareRate[]; gross?: boolean } = {},
+  {
+    shares = [],
+    gross = true,
+    noShare,
+  }: { shares?: ShareRate[]; gross?: boolean; noShare?: NoShare } = {},
 ): ConversionView[] {
   const names = nameIndex(links);
   const cards = cardIndex(links);
@@ -613,7 +617,7 @@ export function describeConversions(
     const notes = row.notes ?? '';
     return {
       ...row,
-      affiliate: revenueFrom(row.amount, gross, shareOn(row.approvedOn, shares)),
+      affiliate: revenueFrom(row.amount, gross, shareFor(row.usr, row.approvedOn, shares, noShare)),
       person: row.usr ? names.get(row.usr) ?? row.usr : 'House',
       card: cardFor(cards, row),
       client: clients.get(leadRefIn(notes)) ?? UNKNOWN_CLIENT,
@@ -642,6 +646,7 @@ export function buildEarnings(
     groupBy = 'person',
     shares = [],
     gross = true,
+    noShare,
   }: {
     period?: Period;
     /** A calendar month, `YYYY-MM`. When set it decides the window instead of `period`. */
@@ -661,6 +666,8 @@ export function buildEarnings(
      * again would pay them a quarter.
      */
     gross?: boolean;
+    /** LGF employees' keys, whose approvals pay no share. See shareFor. */
+    noShare?: NoShare;
   } = {},
 ): EarningsView {
   const names = nameIndex(links);
@@ -725,7 +732,7 @@ export function buildEarnings(
      * been more than one rate; the first time the percentage changes it starts
      * quietly repricing every approval banked before it.
      */
-    row.affiliate += revenueFrom(conversion.amount, gross, shareOn(day, shares));
+    row.affiliate += revenueFrom(conversion.amount, gross, shareFor(conversion.usr, day, shares, noShare));
   }
 
   const list = [...rows.values()];
@@ -744,18 +751,7 @@ export function buildEarnings(
       (groupBy === 'card' ? a.card.localeCompare(b.card) : a.person.localeCompare(b.person)),
   );
 
-  const totals = list.reduce(
-    (acc, row) => ({
-      visits: acc.visits + row.visits,
-      approved: acc.approved + row.approved,
-      earnings: acc.earnings + row.earnings,
-      affiliate: acc.affiliate + row.affiliate,
-      approvalRate: 0,
-    }),
-    { visits: 0, approved: 0, earnings: 0, affiliate: 0, approvalRate: 0 },
-  );
-  totals.approvalRate = safeRate(totals.approved, totals.visits);
-  totals.affiliate = Math.round(totals.affiliate * 100) / 100;
+  const totals = earningsTotals(list);
 
   // Everyone selectable, independent of the period — a filter whose options
   // vanish when you narrow the dates is worse than useless.
@@ -1030,6 +1026,47 @@ function monthSeries(
  * number the app has always produced.
  */
 export const AFFILIATE_SHARE = DEFAULT_SHARE;
+
+/**
+ * The totals row under a set of earnings rows. Shared by buildEarnings and by
+ * the dashboard's Affiliates / LGF - Employee tabs, which total a subset of
+ * the same rows, so a tab's footer and the whole table's are one arithmetic.
+ */
+export function earningsTotals(
+  rows: { visits: number; approved: number; earnings: number; affiliate: number }[],
+): { visits: number; approved: number; earnings: number; affiliate: number; approvalRate: number } {
+  const totals = rows.reduce(
+    (acc, row) => ({
+      visits: acc.visits + row.visits,
+      approved: acc.approved + row.approved,
+      earnings: acc.earnings + row.earnings,
+      affiliate: acc.affiliate + row.affiliate,
+      approvalRate: 0,
+    }),
+    { visits: 0, approved: 0, earnings: 0, affiliate: 0, approvalRate: 0 },
+  );
+  totals.approvalRate = safeRate(totals.approved, totals.visits);
+  totals.affiliate = Math.round(totals.affiliate * 100) / 100;
+  return totals;
+}
+
+/**
+ * Tracking keys that earn no affiliate share: LGF employees'. An approval on
+ * one is the company's in full. Loaded once per page by loadAll, from
+ * lib/users listNoShareKeys.
+ */
+export type NoShare = ReadonlySet<string>;
+
+/**
+ * The share one approval pays its affiliate: the rate in force on its day, or
+ * nothing when the key is an LGF employee's. Every figure that prices a share
+ * goes through here, so an employee's approval cannot be worth something on
+ * one screen and nothing on another.
+ */
+export function shareFor(usr: string, day: string, shares: ShareRate[], noShare?: NoShare): number {
+  if (usr && noShare?.has(usr)) return 0;
+  return shareOn(day, shares);
+}
 
 /**
  * The affiliate's revenue on one approval, rounded to the cent.

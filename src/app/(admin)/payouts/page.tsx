@@ -70,7 +70,7 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
     );
   }
 
-  const { links, submissions, conversions, settings, error } = await loadAll(viewer);
+  const { links, submissions, conversions, settings, noShare, error } = await loadAll(viewer);
 
   /*
    * An admin reads gross payouts everywhere else in the app. A payout is the
@@ -80,10 +80,12 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
    * somebody's name. Request amounts need none of this: they are the shares
    * recorded when the request was made.
    */
-  const owedRows = asAffiliateShare(conversions, settings);
+  // An LGF employee is owed nothing on their approvals: see shareFor.
+  const owedRows = asAffiliateShare(conversions, settings, noShare);
   const views = describeConversions(links, owedRows, submissions, {
     shares: settings.shares,
     gross: false,
+    noShare,
   });
 
   let people: Awaited<ReturnType<typeof listOnboarding>> = [];
