@@ -79,10 +79,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <Link href="/" className="flex flex-none items-center gap-2.5">
             <span aria-hidden className="h-[18px] w-[18px] flex-none bg-gold" />
             <span className="text-[15px] font-semibold tracking-[0.02em]">Ledger</span>
-            <span aria-hidden className="mx-1.5 h-[18px] w-px bg-navy-rule" />
-            <span className="hidden text-[12px] uppercase tracking-[0.06em] text-navy-mute sm:inline">
-              Affiliate operations
-            </span>
           </Link>
 
           <div className="flex min-w-0 items-center gap-4">
