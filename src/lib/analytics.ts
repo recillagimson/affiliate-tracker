@@ -1051,15 +1051,15 @@ export function earningsTotals(
 }
 
 /**
- * Tracking keys that earn no affiliate share: LGF employees'. An approval on
- * one is the company's in full. Loaded once per page by loadAll, from
+ * Tracking keys that earn no affiliate share: LGF employees' and admins'. An
+ * approval on one is the company's in full. Loaded once per page by loadAll, from
  * lib/users listNoShareKeys.
  */
 export type NoShare = ReadonlySet<string>;
 
 /**
  * The share one approval pays its affiliate: the rate in force on its day, or
- * nothing when the key is an LGF employee's. Every figure that prices a share
+ * nothing when the key is an LGF employee's or an admin's. Every figure that prices a share
  * goes through here, so an employee's approval cannot be worth something on
  * one screen and nothing on another.
  */

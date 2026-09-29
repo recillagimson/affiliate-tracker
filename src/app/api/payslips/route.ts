@@ -20,6 +20,7 @@ import {
   createPayoutRequest,
   listCommittedConversionIds,
 } from '@/lib/payout-request-store';
+import { listNoShareKeys } from '@/lib/users';
 
 /**
  * An affiliate's own side of getting paid: asking for it, and saying it
@@ -41,8 +42,8 @@ import {
  *
  * An admin in Client View is the affiliate as far as this route is concerned
  * and may file a request for them, with the audit line naming both. A plain
- * admin session is refused. The rules for both live in lib/payout-api.ts, with
- * their checks.
+ * admin session is refused, and so is an LGF employee, who earns no share to
+ * ask for. The rules for both live in lib/payout-api.ts, with their checks.
  *
  * Nothing this route answers carries an amount. A request's figures are read
  * back on the payslip page, from the snapshot the database kept.
@@ -71,7 +72,20 @@ export async function POST(request: Request) {
     return refuse({ status: 400, error: 'No such action.', hint: 'Expected request or confirm.' });
   }
 
-  const refused = payslipGate(viewer, action);
+  // Only a request needs to know, and only an affiliate with a key could get
+  // that far. A failed read refuses rather than guessing "not an employee".
+  let lgfEmployee = false;
+  if (action === 'request' && viewer.role === 'affiliate' && viewer.usr) {
+    try {
+      lgfEmployee = (await listNoShareKeys()).has(viewer.usr);
+    } catch (error) {
+      const refusal = storeFailure(error, 'Your account could not be checked just now.');
+      if (refusal.status >= 500) console.error('checking for an LGF employee', error);
+      return refuse(refusal);
+    }
+  }
+
+  const refused = payslipGate(viewer, action, lgfEmployee);
   if (refused) return refuse(refused);
 
   const by = requestedByFor(viewer);

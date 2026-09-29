@@ -11,6 +11,7 @@ import {
   type PayoutRequestRecord,
 } from '@/lib/payout-request-store';
 import { cardsFor, requestRows } from '@/lib/payslip-view';
+import { listNoShareKeys } from '@/lib/users';
 import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,7 @@ export const metadata: Metadata = { title: 'My payslip' };
  *
  * An admin in Client View reaches this page as the affiliate and may request
  * payment for them; the request route writes down that it was an admin who
- * pressed the button.
+ * pressed the button. Neither an admin nor an LGF employee can request.
  */
 export default async function PayslipsPage() {
   const viewer = await requireViewer();
@@ -70,7 +71,34 @@ export default async function PayslipsPage() {
   }
 
   const today = dayOf(new Date().toISOString());
-  const [load, read] = await Promise.all([loadAll(viewer), readRequests(viewer.id)]);
+  const [load, read, lgfEmployee] = await Promise.all([
+    loadAll(viewer),
+    readRequests(viewer.id),
+    isLgfEmployee(viewer.usr),
+  ]);
+
+  /*
+   * An LGF employee earns no share, so there is nothing for them to ask for;
+   * the request route refuses them too. Their earlier requests, if any, still
+   * show below.
+   */
+  if (lgfEmployee !== false) {
+    return (
+      <div className="mx-auto w-full max-w-[900px]">
+        <h1 className="font-display text-[26px] leading-[1.05]">My payslip</h1>
+        {lgfEmployee === null ? (
+          <div className="mt-5">
+            <ErrorPanel title="Could not check your account" message="Try again in a moment." hint="" />
+          </div>
+        ) : (
+          <p className="panel mt-5 p-5 text-[13px] text-ink-soft">
+            LGF employees are not paid through Ledger, so there is nothing to request here.
+          </p>
+        )}
+        {read.error ? null : <YourRequests rows={requestRows(read.requests)} />}
+      </div>
+    );
+  }
 
   /*
    * Cards are offered only when both halves of the answer were read: the
@@ -142,5 +170,16 @@ async function readRequests(userId: string): Promise<{
       committed: null,
       error: caught instanceof Error ? caught.message : 'Could not read your payment requests.',
     };
+  }
+}
+
+/** True or false, or null when it could not be read: the caller then offers nothing. */
+async function isLgfEmployee(usr: string): Promise<boolean | null> {
+  if (!usr) return false;
+  try {
+    return (await listNoShareKeys()).has(usr);
+  } catch (caught) {
+    console.error('checking for an LGF employee', caught);
+    return null;
   }
 }

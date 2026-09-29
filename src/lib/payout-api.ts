@@ -165,10 +165,16 @@ export function readPayslipAction(value: unknown): PayslipAction | null {
  * Confirming needs an account id but not a tracking key: a payment already
  * made against an account is still theirs to confirm if their key has since
  * been taken away.
+ *
+ * An LGF employee earns no affiliate share (lib/users listNoShareKeys), so
+ * they have nothing to ask for and may not request. The caller looks that up,
+ * since this function reads nothing but the session. Confirming is left open:
+ * a payment recorded before they became an employee is still theirs to confirm.
  */
 export function payslipGate(
   viewer: Pick<Viewer, 'role' | 'id' | 'usr'>,
   action: PayslipAction,
+  lgfEmployee = false,
 ): Refusal | null {
   if (viewer.role !== 'affiliate') {
     return {
@@ -185,6 +191,9 @@ export function payslipGate(
   if (!viewer.id) return { status: 403, error: 'This account has no payslips of its own.' };
   if (action === 'request' && !viewer.usr) {
     return { status: 403, error: 'Your account has no tracking key, so nothing can be requested.' };
+  }
+  if (action === 'request' && lgfEmployee) {
+    return { status: 403, error: 'LGF employees are not paid through payout requests.' };
   }
   return null;
 }

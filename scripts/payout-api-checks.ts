@@ -183,6 +183,11 @@ check('and confirm', payslipGate(VIEWING, 'confirm') === null);
   const noKey = heard(payslipGate({ ...SAM, usr: '' }, 'request'), true);
   check('no tracking key, nothing to request', noKey?.status === 403 && noKey.error === 'Your account has no tracking key, so nothing can be requested.', noKey);
   check('but a payment already made can still be confirmed', payslipGate({ ...SAM, usr: '' }, 'confirm') === null);
+  const lgf = heard(payslipGate(SAM, 'request', true), true);
+  check('an LGF employee may not request', lgf?.status === 403 && lgf.error === 'LGF employees are not paid through payout requests.', lgf);
+  check('nor through Client View', payslipGate(VIEWING, 'request', true)?.status === 403);
+  check('but may still confirm a payment', payslipGate(SAM, 'confirm', true) === null);
+  check('an admin is still refused as an admin', payslipGate(ADMIN, 'request', true)?.error === 'Only an affiliate can request a payment.');
 }
 check('request is an action', readPayslipAction('request') === 'request');
 check('confirm is an action', readPayslipAction('confirm') === 'confirm');

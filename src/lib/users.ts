@@ -450,28 +450,30 @@ export async function deleteUser(id: string): Promise<void> {
  */
 
 /**
- * The tracking keys that earn no affiliate share: LGF employees'. Every
- * approval on one of these is the company's in full. See lib/analytics
+ * The tracking keys that earn no affiliate share: LGF employees' and admins'.
+ * Every approval on one of these is the company's in full. See lib/analytics
  * shareFor, which is where this list is applied.
+ *
+ * Admins are here because an affiliate made an admin keeps their tracking key
+ * (setUserRole), and whatever still comes in on it is not paid out as a share.
  *
  * Unlike the label reads below, a failure here is thrown: this list changes
  * what people are paid, and quietly treating an employee as an affiliate would
- * price their approvals as payable. A database without the column has no
- * employees to list, so that one case is an empty list.
+ * price their approvals as payable. A database without the lgf_employee column
+ * has no employees to list, so that case falls back to the admins alone.
  */
 export async function listNoShareKeys(): Promise<Set<string>> {
   if (!usersEnabled()) return new Set();
-  const { data, error } = await getSupabaseClient()
+  let { data, error } = await getSupabaseClient()
     .from('users')
     .select('usr')
-    .eq('role', 'affiliate')
-    .eq('lgf_employee', true);
-  if (error) {
-    if (['42703', 'PGRST204'].includes(error.code ?? '')) return new Set();
-    fail('reading which accounts earn no share', error);
+    .or('role.eq.admin,lgf_employee.eq.true');
+  if (error && ['42703', 'PGRST204'].includes(error.code ?? '')) {
+    ({ data, error } = await getSupabaseClient().from('users').select('usr').eq('role', 'admin'));
   }
+  if (error) fail('reading which accounts earn no share', error);
   return new Set(
-    (data ?? []).map((row) => String((row as { usr: string }).usr ?? '')).filter(Boolean),
+    (data ?? []).map((row) => String((row as { usr: string | null }).usr ?? '')).filter(Boolean),
   );
 }
 
