@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { MobileTabs, Nav } from '@/components/Nav';
 import { SignOutButton } from '@/components/SignOutButton';
-import { UpdateNotice } from '@/components/UpdateNotice';
+// Update pop-up switched off for now; uncomment these, and the lines below, to bring it back.
+// import { UpdateNotice } from '@/components/UpdateNotice';
 import { ViewAsBanner } from '@/components/ViewAsBanner';
 import { authConfigured } from '@/lib/auth';
 import { initialsOf } from '@/lib/analytics';
@@ -9,8 +10,8 @@ import { storageStatus, type StorageStatus } from '@/lib/store';
 import { isBypassed } from '@/lib/approval';
 import { stepsFor } from '@/lib/onboarding';
 import { requireOnboarded } from '@/lib/onboarding-guard';
-import { currentAnnouncement } from '@/lib/updates';
-import { loginStamp } from '@/lib/viewer';
+// import { currentAnnouncement } from '@/lib/updates';
+// import { loginStamp } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,8 +59,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     ? stepsFor({ bypassed: true }).filter((step) => !state[step.key]).length
     : 0;
   // Every role, admins included. After every sign-in, on whichever page is first.
-  const announcement = currentAnnouncement(isAdmin);
-  const login = announcement ? await loginStamp() : '';
+  // const announcement = currentAnnouncement(isAdmin);
+  // const login = announcement ? await loginStamp() : '';
 
   return (
     <div className="min-h-screen bg-paper">
@@ -166,7 +167,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           otherwise sit underneath it at the end of a scroll. */}
       <main className="w-full px-5 pb-24 pt-6 sm:px-7 2xl:px-8 md:pb-14">{children}</main>
 
-      {announcement ? <UpdateNotice update={announcement} login={login} /> : null}
+      {/* {announcement ? <UpdateNotice update={announcement} login={login} /> : null} */}
 
       <div className="no-print">
         <MobileTabs isAdmin={isAdmin} />

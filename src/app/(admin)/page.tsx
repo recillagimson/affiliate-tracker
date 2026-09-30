@@ -10,7 +10,8 @@ import { LinkPending } from '@/components/LinkPending';
 import { MonthFilter } from '@/components/MonthFilter';
 import { PersonFilter } from '@/components/PersonFilter';
 import { SalesStrip } from '@/components/SalesStrip';
-import { UpdateBanner } from '@/components/UpdateBanner';
+// Update banner switched off for now; uncomment these, and the lines below, to bring it back.
+// import { UpdateBanner } from '@/components/UpdateBanner';
 import {
   activeMonths,
   affiliateHref,
@@ -29,7 +30,7 @@ import { captureFormEnabled } from '@/lib/config';
 import { loadAll } from '@/lib/load';
 import { approvedCards, approvedLeadIds, cardForLead } from '@/lib/qmp-sync';
 import { loadApproveContext } from '@/lib/approve-context';
-import { currentAnnouncement } from '@/lib/updates';
+// import { currentAnnouncement } from '@/lib/updates';
 import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -66,7 +67,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
   const viewer = await requireViewer();
   const isAdmin = viewer.role === 'admin';
-  const announcement = currentAnnouncement(isAdmin);
+  // const announcement = currentAnnouncement(isAdmin);
 
   // Already cut to this viewer's tracking key. Everything below counts, sums
   // and charts whatever came back, so scoping once here is what makes every
@@ -123,7 +124,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     return (
       <>
         <h1 className="sr-only">Dashboard</h1>
-        {announcement ? <UpdateBanner update={announcement} /> : null}
+        {/* {announcement ? <UpdateBanner update={announcement} /> : null} */}
         {isAdmin ? (
           <EmptyState
             title="Nothing has come in yet"
@@ -218,7 +219,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   return (
     <div className="w-full">
       <h1 className="sr-only">Dashboard</h1>
-      {announcement ? <UpdateBanner update={announcement} /> : null}
+      {/* {announcement ? <UpdateBanner update={announcement} /> : null} */}
 
       {/* Filters. Links rather than client state: the filter lives in the URL, so
           a view can be bookmarked and the table stays server-rendered. */}
