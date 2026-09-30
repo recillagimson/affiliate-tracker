@@ -66,3 +66,14 @@ export async function requireAdmin(): Promise<Viewer> {
   if (viewer.role !== 'admin') redirect('/');
   return viewer;
 }
+
+/**
+ * Something that differs between one sign-in and the next, for "once per
+ * login" on the page. The session's expiry does: it is set when the token is
+ * minted and never slides. '' when there is no session cookie (open, or Basic).
+ */
+export async function loginStamp(): Promise<string> {
+  const jar = await cookies();
+  const session = await readSessionToken(jar.get(SESSION_COOKIE)?.value);
+  return session ? String(session.expiresAt) : '';
+}

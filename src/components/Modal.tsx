@@ -64,7 +64,7 @@ export function Modal({
       onClick={(event) => {
         if (event.target === ref.current) onClose();
       }}
-      className="w-[min(680px,calc(100vw-2rem))] rounded-[14px] border-2 border-edge bg-panel p-0 text-ink backdrop:bg-ink/40"
+      className="m-auto w-[min(680px,calc(100vw-2rem))] rounded-[14px] border-2 border-edge bg-panel p-0 text-ink backdrop:bg-ink/40"
     >
       <div className="max-h-[min(82vh,900px)] overflow-y-auto p-6 sm:p-8">
         <div className="flex items-start justify-between gap-6">

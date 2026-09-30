@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { MobileTabs, Nav } from '@/components/Nav';
 import { SignOutButton } from '@/components/SignOutButton';
+import { UpdateNotice } from '@/components/UpdateNotice';
 import { ViewAsBanner } from '@/components/ViewAsBanner';
 import { authConfigured } from '@/lib/auth';
 import { initialsOf } from '@/lib/analytics';
@@ -8,6 +9,8 @@ import { storageStatus, type StorageStatus } from '@/lib/store';
 import { isBypassed } from '@/lib/approval';
 import { stepsFor } from '@/lib/onboarding';
 import { requireOnboarded } from '@/lib/onboarding-guard';
+import { currentAnnouncement } from '@/lib/updates';
+import { loginStamp } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +45,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const isAdmin = viewer.role === 'admin';
   // The one step that nags instead of barring. §2 of the agreement makes a
   // payment impossible without it, so it is worth a standing line — but there
-  // are six weeks of Net-45 slack to produce it in, so it is not worth a wall.
+  // are two weeks of Net-15 slack to produce it in, so it is not worth a wall.
   const bankMissing = applies && !state.bank;
   /*
    * A waived account can be missing its own details as well as its bank
@@ -54,6 +57,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const owed = waived
     ? stepsFor({ bypassed: true }).filter((step) => !state[step.key]).length
     : 0;
+  // Every role, admins included. After every sign-in, on whichever page is first.
+  const announcement = currentAnnouncement(isAdmin);
+  const login = announcement ? await loginStamp() : '';
 
   return (
     <div className="min-h-screen bg-paper">
@@ -159,6 +165,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           pb-24 on phones clears the fixed tab bar; the last panel would
           otherwise sit underneath it at the end of a scroll. */}
       <main className="w-full px-5 pb-24 pt-6 sm:px-7 2xl:px-8 md:pb-14">{children}</main>
+
+      {announcement ? <UpdateNotice update={announcement} login={login} /> : null}
 
       <div className="no-print">
         <MobileTabs isAdmin={isAdmin} />
