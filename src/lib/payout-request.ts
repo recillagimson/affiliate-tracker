@@ -1,18 +1,18 @@
 /**
  * Which approved cards somebody may ask to be paid for, and when.
  *
- * Every approval runs on its own clock. It becomes requestable 45 days after
+ * Every approval runs on its own clock. It becomes requestable 15 days after
  * the day it was approved and stays requestable until it is put on a request.
  * There is no shared payday and no cycle any more: an affiliate chooses which
  * ready cards to be paid for, and an admin pays what was asked for.
  *
- * The same 45 for everybody. Not counted from the day somebody signed, and not
+ * The same 15 for everybody. Not counted from the day somebody signed, and not
  * varied by which version of the agreement they signed: two cards approved on
  * the same day are ready on the same day, whoever brought them in. The database
- * re-checks this with a literal 45 in create_payout_request's cutoff
- * (supabase/migrations/20260914120000_payout_requests.sql), because a SQL
- * function cannot import a TypeScript constant; scripts/payout-request-checks.ts
- * reads that file and holds the literal to PAYOUT_DAYS, so the page can never
+ * re-checks this with a literal 15 in create_payout_request's cutoff
+ * (supabase/migrations/20261001120000_net_15.sql), because a SQL function
+ * cannot import a TypeScript constant; scripts/payout-request-checks.ts reads
+ * the newest migration that defines it and holds the literal to PAYOUT_DAYS, so the page can never
  * offer a card the database refuses.
  *
  * Pure, like lib/payout: day keys and plain rows in, answers out. No store and
@@ -41,7 +41,7 @@ function readDay(value: string): string {
 
 /* ------------------------------------------------------------- the clock --- */
 
-/** The day a card first becomes requestable: approved + 45. '' when the approval day is unreadable. */
+/** The day a card first becomes requestable: approved + 15. '' when the approval day is unreadable. */
 export function eligibleOn(approvedOn: string): string {
   const day = readDay(approvedOn);
   return day ? addDays(day, PAYOUT_DAYS) : '';
@@ -62,10 +62,10 @@ export function daysUntilEligible(approvedOn: string, today: string): number {
 }
 
 /**
- * Approved on D is requestable on D+45 and every day after, never on D+44.
+ * Approved on D is requestable on D+15 and every day after, never on D+14.
  *
  * The boundary is inclusive on purpose, and matches the database's own
- * `approved_on <= today - 45`: the 45th day is the day the agreement says
+ * `approved_on <= today - 15`: the 15th day is the day the agreement says
  * payment is due, so it is the first day somebody may ask for it.
  */
 export function isEligible(approvedOn: string, today: string): boolean {

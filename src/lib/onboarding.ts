@@ -32,7 +32,7 @@ export type Step = {
    *
    * Bank details are the exception, and deliberately: they are the one step
    * somebody might genuinely not have to hand — a new account, a shared
-   * business account, a bank that has to be phoned. Net 45 means there are six
+   * business account, a bank that has to be phoned. Net 15 means there are two
    * weeks of slack, so this one nags instead of blocking.
    */
   required: boolean;

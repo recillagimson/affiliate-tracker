@@ -2,7 +2,7 @@
  * Payout requests, in Supabase.
  *
  * An affiliate chooses which of their approved cards to be paid for, once each
- * one is 45 days old, and this is where that choice and what became of it
+ * one is 15 days old, and this is where that choice and what became of it
  * live: public.payout_requests is the payment record, and
  * public.payout_request_items says which approvals it covers and what each was
  * worth when it was asked for. See the migration, 20260914120000.

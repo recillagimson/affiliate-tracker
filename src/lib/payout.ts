@@ -18,8 +18,8 @@
 import { PAYMENT_DAYS } from './agreement';
 
 /**
- * How long an approval waits before it can be requested, in days. Net 45 in
- * the agreement and the same 45 here, for every affiliate whichever version
+ * How long an approval waits before it can be requested, in days. Net 15 in
+ * the agreement and the same 15 here, for every affiliate whichever version
  * they signed. The database repeats it as a literal in create_payout_request,
  * and scripts/payout-request-checks.ts holds that literal to this number.
  */

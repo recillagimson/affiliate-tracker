@@ -474,15 +474,15 @@ for (const width of SCREENS) {
 
 console.log('\n- the pending tab -');
 const PENDING_VIEWS = [
-  view('p1', { usr: 'ana', approvedOn: '2026-08-20', amount: 50, card: 'Alpha' }),
-  view('p2', { usr: 'ana', approvedOn: '2026-08-26', amount: 20, card: 'Beta' }),
-  view('p3', { usr: 'dana', approvedOn: '2026-09-01', amount: 30, card: 'Gamma' }),
-  view('p4', { usr: 'dana', approvedOn: '2026-09-09', amount: 40, card: 'Delta' }),
-  view('p5', { usr: '', person: 'House', approvedOn: '2026-08-01', amount: 80, card: 'House Card' }),
-  view('p6', { usr: 'ana', approvedOn: '2026-08-01', amount: 60, card: 'Spoken For' }),
-  view('p7', { usr: 'zed', person: 'Zed Link', approvedOn: '2026-08-15', amount: 10, card: 'Epsilon' }),
-  view('p8', { usr: 'ana', approvedOn: '2026-09-25', amount: 15, card: 'Zeta' }),
-  view('p10', { usr: 'dana', approvedOn: '2026-08-27', amount: 12.5, card: 'Eta' }),
+  view('p1', { usr: 'ana', approvedOn: '2026-09-19', amount: 50, card: 'Alpha' }),
+  view('p2', { usr: 'ana', approvedOn: '2026-09-25', amount: 20, card: 'Beta' }),
+  view('p3', { usr: 'dana', approvedOn: '2026-10-01', amount: 30, card: 'Gamma' }),
+  view('p4', { usr: 'dana', approvedOn: '2026-10-09', amount: 40, card: 'Delta' }),
+  view('p5', { usr: '', person: 'House', approvedOn: '2026-08-31', amount: 80, card: 'House Card' }),
+  view('p6', { usr: 'ana', approvedOn: '2026-08-31', amount: 60, card: 'Spoken For' }),
+  view('p7', { usr: 'zed', person: 'Zed Link', approvedOn: '2026-09-14', amount: 10, card: 'Epsilon' }),
+  view('p8', { usr: 'ana', approvedOn: '2026-10-10', amount: 15, card: 'Zeta' }),
+  view('p10', { usr: 'dana', approvedOn: '2026-09-26', amount: 12.5, card: 'Eta' }),
 ];
 const pending = buildPending(PENDING_VIEWS, byUsr, TODAY, new Set(['p6']));
 const pendingHtml = renderToStaticMarkup(<PendingApprovals {...pending} />);
@@ -496,7 +496,7 @@ check(
   'ready first',
   pendingHtml.indexOf('>Ready to request</h2>') < pendingHtml.indexOf(`>Not yet ${PAYOUT_DAYS} days</h2>`),
 );
-check('each says what it means', pendingHtml.includes('45 days have passed. Nothing happens until the affiliate asks to be paid.'));
+check('each says what it means', pendingHtml.includes('15 days have passed. Nothing happens until the affiliate asks to be paid.'));
 check('the other too', pendingHtml.includes('Not old enough to request yet.'));
 
 check('every ready card is marked ready, in gold', count(ready, 'chip chip-gold">Ready<') === 3);
@@ -520,7 +520,7 @@ check('nor a card already on a request', !pendingHtml.includes('Spoken For'));
 check('the person is named', counting.includes('dana') && ready.includes('Ana Lima'));
 check('a key with no account is named from its link', ready.includes('Zed Link'));
 check('with the customer', counting.includes('Customer p3'));
-check('the day it was approved', counting.includes('1 Sep 2026'));
+check('the day it was approved', counting.includes('1 Oct 2026'));
 check('and what it is worth to them', counting.includes(formatMoney(12.5)));
 check('nothing to press on a list nobody acts on yet', !pendingHtml.includes('<button'));
 check('no em or en dash anywhere in it', !DASHES.test(pendingHtml), pendingHtml.match(DASHES));
@@ -538,7 +538,7 @@ check('everything already asked for says that instead', allAsked.includes(pendin
 check('and draws no sections either', !allAsked.includes('</h2>'));
 const notYet = renderToStaticMarkup(
   <PendingApprovals
-    {...buildPending(PENDING_VIEWS.filter((row) => row.approvedOn >= '2026-08-27'), byUsr, TODAY, new Set())}
+    {...buildPending(PENDING_VIEWS.filter((row) => row.approvedOn >= '2026-09-26'), byUsr, TODAY, new Set())}
   />,
 );
 check('with nothing ready, the ready section is not drawn', !notYet.includes('>Ready to request</h2>'));

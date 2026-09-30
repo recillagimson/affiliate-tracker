@@ -41,7 +41,7 @@ import { BLANK } from '@/lib/report-table';
 /**
  * The Requests tab: every payment an affiliate has asked for.
  *
- * There is no schedule any more. Each card turns requestable 45 days after it
+ * There is no schedule any more. Each card turns requestable 15 days after it
  * is approved, the affiliate picks which ready cards to be paid for, and what
  * lands here is that choice: a request, with its cards and what they came to
  * when it was made. The admin's job on this page is to pay what was asked for,

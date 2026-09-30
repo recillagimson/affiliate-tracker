@@ -1,6 +1,6 @@
 // The day arithmetic every payout screen counts with.
 //
-// There is no payout schedule any more. Each approved card runs on its own 45
+// There is no payout schedule any more. Each approved card runs on its own 15
 // day clock and the affiliate requests it once that has run (lib/payout-request,
 // pinned in payout-request-checks). What stays in lib/payout is the part both
 // the old model and the new one needed: turning whatever a database hands back
@@ -39,20 +39,20 @@ function check(name: string, cond: boolean, extra?: unknown) {
 }
 
 console.log('- the wait is the payment term -');
-check('45 days', PAYOUT_DAYS === 45);
+check('15 days', PAYOUT_DAYS === 15);
 /*
- * Not a second 45 typed next to the first. The agreement says Net 45 in words
+ * Not a second 15 typed next to the first. The agreement says Net 15 in words
  * and the payout screens count in days; if those two ever disagree, somebody is
  * paid on a date their own contract does not describe.
  */
 check('and it is the agreement that says so', PAYOUT_DAYS === PAYMENT_DAYS);
 
 console.log('\n- counting days -');
-// Approved 19 August, requestable 3 October. The example the screens were built on.
+// Approved 19 August, requestable 3 September. The example the screens were built on.
 const AUG19 = '2026-08-19';
-check('45 days on from 19 August is 3 October', addDays(AUG19, PAYOUT_DAYS) === '2026-10-03');
-check('and those are 45 days apart', daysBetween(AUG19, '2026-10-03') === 45);
-check('counting back reads as negative', daysBetween('2026-10-03', AUG19) === -45);
+check('15 days on from 19 August is 3 September', addDays(AUG19, PAYOUT_DAYS) === '2026-09-03');
+check('and those are 15 days apart', daysBetween(AUG19, '2026-09-03') === 15);
+check('counting back reads as negative', daysBetween('2026-09-03', AUG19) === -15);
 check('a day from itself is nothing', daysBetween(AUG19, AUG19) === 0);
 check('a day can be moved back', addDays(AUG19, -1) === '2026-08-18');
 /*
@@ -112,7 +112,7 @@ check('and floating point noise does not', settlesUp(0.1 + 0.2, 0.3));
 console.log('\n- dates as people read them -');
 check('a day', shortDay('2026-08-15') === '15 Aug 2026');
 check('the first of a month', shortDay('2026-01-01') === '1 Jan 2026');
-check('the day a card becomes ready', shortDay(addDays(AUG19, PAYOUT_DAYS)) === '3 Oct 2026');
+check('the day a card becomes ready', shortDay(addDays(AUG19, PAYOUT_DAYS)) === '3 Sep 2026');
 check('a timestamp reads as its day', shortDay('2026-08-15T22:00:00Z') === '15 Aug 2026');
 check('and a Postgres one too', shortDay('2026-08-15 22:00:00.1+00') === '15 Aug 2026');
 check('and nonsense is handed back unchanged', shortDay('someday') === 'someday');

@@ -93,9 +93,9 @@ const LOAD: Loaded = {
   ],
   conversions: [
     conversion('101', 'ana', 'platinum', '2026-08-01', 70, 'lead:abc1'),
-    conversion('102', 'ana', 'cashback', '2026-08-26', 70.5),
-    conversion('103', 'ana', 'platinum', '2026-08-27', 40, 'lead:abc1'),
-    conversion('104', 'ana', 'cashback', '2026-09-28', 25),
+    conversion('102', 'ana', 'cashback', '2026-09-25', 70.5),
+    conversion('103', 'ana', 'platinum', '2026-09-26', 40, 'lead:abc1'),
+    conversion('104', 'ana', 'cashback', '2026-10-08', 25),
     // Old enough, but already on a live request.
     conversion('105', 'ana', 'platinum', '2026-08-02', 60),
     // Somebody else's, which a scoped load never carries, and a house card.
@@ -136,7 +136,7 @@ check('cents survive into the amount', cashback.amount === 70.5, cashback);
 // A screen reader reads a lone hyphen as "dash", which says nothing.
 check(
   'and the label says so in words',
-  heard(cashback.label) === 'Cash Back Card, customer not on file, approved 26 Aug 2026, $70.50',
+  heard(cashback.label) === 'Cash Back Card, customer not on file, approved 25 Sep 2026, $70.50',
   cashback.label,
 );
 
@@ -148,8 +148,8 @@ const soon = countingDown[0]!;
 check('one day left', soon.daysLeft === 1 && heard(soon.countdown) === '1 day left', soon);
 check('and the day it turns ready', heard(soon.readyDay) === 'Ready 11 Oct 2026', soon);
 const later = countingDown[1]!;
-check('thirty-three days left', heard(later.countdown) === '33 days left', later);
-check('ready in November', heard(later.readyDay) === 'Ready 12 Nov 2026', later);
+check('thirteen days left', heard(later.countdown) === '13 days left', later);
+check('ready later in October', heard(later.readyDay) === 'Ready 23 Oct 2026', later);
 
 /*
  * Only these fields reach the client component. No notes, no slug, no usr and
@@ -314,7 +314,7 @@ check(
   'the empty ready list says when cards turn ready',
   heard(nothingReadyText()) === `Nothing is ready yet. Cards become requestable ${PAYOUT_DAYS} days after they are approved.`,
 );
-check('and it is 45', nothingReadyText().includes('45 days'));
+check('and it is 15', nothingReadyText().includes('15 days'));
 check('the success line', heard(SUCCESS_MESSAGE) === 'Payment requested. You can track it below.');
 
 console.log('\n- which addresses are a request -');

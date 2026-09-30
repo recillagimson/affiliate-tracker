@@ -28,10 +28,10 @@
  * into SUPERSEDED below at the same time, or every copy already signed under
  * the old version re-renders under the new one.
  */
-export const AGREEMENT_VERSION = '2026-08-27';
+export const AGREEMENT_VERSION = '2026-10-01';
 
 /**
- * Net 45, as a number the payout screens can count in.
+ * Net 15, as a number the payout screens can count in.
  *
  * The payment term is written into clause 4 and into the summary table below in
  * words, and a card can be requested that many days after its approval (see
@@ -40,7 +40,7 @@ export const AGREEMENT_VERSION = '2026-08-27';
  * apart: changing the term here changes both, and changing only the prose is
  * caught by the check that reads this number back out of the clause.
  */
-export const PAYMENT_DAYS = 45;
+export const PAYMENT_DAYS = 15;
 
 /* ------------------------------------------------------------------------- */
 /* The blanks the company owns                                               */
@@ -97,7 +97,7 @@ export const SUMMARY: { term: string; details: string }[] = [
   {
     term: 'Payment Terms',
     details:
-      'Net 45 — paid 45 calendar days after the referral is approved, by ACH, contingent on a signed ' +
+      'Net 15 — paid 15 calendar days after the referral is approved, by ACH, contingent on a signed ' +
       'W-9 and valid banking information on file.',
   },
   {
@@ -159,7 +159,7 @@ export const CLAUSES: Clause[] = [
     title: 'Compensation',
     paras: [
       'Affiliate will be paid a flat amount per approved referral, as set forth in Company’s payout schedule provided to Affiliate separately. Company may update the payout schedule from time to time on notice to Affiliate.',
-      'Payment terms are net forty-five (45) days ("Net 45"), meaning payment is due forty-five (45) calendar days after the referral is approved by the applicable card issuer/program, subject to Company’s receipt of its own payment from its upstream partner.',
+      'Payment terms are net fifteen (15) days ("Net 15"), meaning payment is due fifteen (15) calendar days after the referral is approved by the applicable card issuer/program, subject to Company’s receipt of its own payment from its upstream partner.',
       'All payments will be made by ACH to the bank account Affiliate provides in writing. Company is not obligated to pay by any other method.',
       'Company may withhold, offset, or reverse any payment associated with a referral that is later reversed, charged back, found fraudulent, or found to violate this Agreement or any card issuer/program terms.',
       'No compensation is owed for referrals submitted through any link, method, or channel other than the Link issued directly by Company to Affiliate.',
@@ -272,6 +272,22 @@ export type Revision = {
 };
 
 export const SUPERSEDED: Revision[] = [
+  {
+    version: '2026-08-27',
+    note: 'Payment was Net 45 from 27 August until 1 October 2026.',
+    summary: {
+      'Payment Terms':
+        'Net 45 — paid 45 calendar days after the referral is approved, by ACH, contingent on a signed ' +
+        'W-9 and valid banking information on file.',
+    },
+    paras: [
+      {
+        clause: 4,
+        at: 1,
+        text: 'Payment terms are net forty-five (45) days ("Net 45"), meaning payment is due forty-five (45) calendar days after the referral is approved by the applicable card issuer/program, subject to Company’s receipt of its own payment from its upstream partner.',
+      },
+    ],
+  },
   {
     version: '2026-08',
     note: 'Payment was Net 30 until 27 August 2026.',

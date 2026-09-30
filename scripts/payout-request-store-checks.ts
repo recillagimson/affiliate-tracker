@@ -20,11 +20,11 @@
 //     classes; anything else the RPCs raise becomes one plain sentence and
 //     never Postgres's own words.
 //
-// Plus the one check that ties the SQL to the TypeScript: the migration's 45
+// Plus the one check that ties the SQL to the TypeScript: the migration's 15
 // day cutoff is a literal, and it has to be the same number as PAYOUT_DAYS.
 //
 //   npx tsx scripts/payout-request-store-checks.ts
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { PAYOUT_DAYS } from '../src/lib/payout';
@@ -43,7 +43,27 @@ const DASHES = /[\u2013\u2014]/;
 
 /* ------------------------------------------------------------ migration --- */
 
-const MIGRATION = join(__dirname, '..', 'supabase', 'migrations', '20260914120000_payout_requests.sql');
+const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
+const MIGRATION = join(MIGRATIONS, '20260914120000_payout_requests.sql');
+
+/**
+ * The newest migration that defines create_payout_request, which is the one the
+ * database runs, since each one replaces the last. Migration names sort by the
+ * timestamp they start with. The table, the error codes and the foreign key
+ * stay in the first migration; the cutoff and LG003's wording move with the
+ * function, so those are read from here.
+ */
+function newestFunctionMigration(): { name: string; sql: string } | null {
+  try {
+    for (const name of readdirSync(MIGRATIONS).filter((file) => file.endsWith('.sql')).sort().reverse()) {
+      const sql = readFileSync(join(MIGRATIONS, name), 'utf8');
+      if (/create or replace function public\.create_payout_request\(/.test(sql)) return { name, sql };
+    }
+  } catch {
+    // Reported below as a function that is nowhere on disk.
+  }
+  return null;
+}
 
 /**
  * Every single-quoted literal in the SQL, comments removed first. Exception
@@ -72,23 +92,30 @@ function migrationChecks() {
   if (!existsSync(MIGRATION)) return;
   const sql = readFileSync(MIGRATION, 'utf8');
 
-  const cutoff = /v_cutoff\s+date\s*:=\s*\(now\(\)\s+at\s+time\s+zone\s+'utc'\)::date\s*-\s*(\d+)\s*;/i.exec(sql);
-  check('the cutoff is written as a literal day count', Boolean(cutoff));
-  check(
-    `and that literal is PAYOUT_DAYS (${PAYOUT_DAYS})`,
-    Number(cutoff?.[1]) === PAYOUT_DAYS,
-    cutoff?.[1],
-  );
-
-  const literals = sqlLiterals(sql);
-  const dashed = literals.filter((text) => DASHES.test(text));
+  const dashed = sqlLiterals(sql).filter((text) => DASHES.test(text));
   check('no string in the migration carries an em or en dash', dashed.length === 0, dashed);
-  const dayCounts = literals.flatMap((text) => [...text.matchAll(/(\d+) days?\b/g)].map((m) => Number(m[1])));
-  check(
-    'every day count a sentence names is PAYOUT_DAYS too',
-    dayCounts.length > 0 && dayCounts.every((n) => n === PAYOUT_DAYS),
-    dayCounts,
-  );
+
+  const current = newestFunctionMigration();
+  check('create_payout_request is defined in some migration', current !== null);
+  if (current) {
+    const cutoff = /v_cutoff\s+date\s*:=\s*\(now\(\)\s+at\s+time\s+zone\s+'utc'\)::date\s*-\s*(\d+)\s*;/i.exec(current.sql);
+    check(`the cutoff in ${current.name} is written as a literal day count`, Boolean(cutoff));
+    check(
+      `and that literal is PAYOUT_DAYS (${PAYOUT_DAYS})`,
+      Number(cutoff?.[1]) === PAYOUT_DAYS,
+      cutoff?.[1],
+    );
+
+    const literals = sqlLiterals(current.sql);
+    const dashedToo = literals.filter((text) => DASHES.test(text));
+    check(`no string in ${current.name} carries an em or en dash`, dashedToo.length === 0, dashedToo);
+    const dayCounts = literals.flatMap((text) => [...text.matchAll(/(\d+) days?\b/g)].map((m) => Number(m[1])));
+    check(
+      'every day count a sentence names is PAYOUT_DAYS too',
+      dayCounts.length > 0 && dayCounts.every((n) => n === PAYOUT_DAYS),
+      dayCounts,
+    );
+  }
 
   for (const code of ['LG001', 'LG002', 'LG003', 'LG004', 'LG005', 'LG006', 'LG007']) {
     check(`the migration raises ${code}`, new RegExp(`errcode\\s*=\\s*'${code}'`).test(sql));

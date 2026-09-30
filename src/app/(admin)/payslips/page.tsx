@@ -23,7 +23,7 @@ export const metadata: Metadata = { title: 'My payslip' };
  * already asked for.
  *
  * There is no payday any more. Every approved card runs on its own clock and
- * can be asked for 45 days after it was approved, so this page is built around
+ * can be asked for 15 days after it was approved, so this page is built around
  * the one decision that is the affiliate's to make: which ready cards to be
  * paid for, and when. Three sections, in the order somebody acts on them. Ready
  * to request is at the top because it is the only one with anything to press.

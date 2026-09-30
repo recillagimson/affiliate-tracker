@@ -364,7 +364,7 @@ console.log('\n- empty -');
 check(
   'no requests at all',
   heard(noRequestsText(0, '')) ===
-    'No requests yet. Once a card is 45 days old, the affiliate can ask to be paid for it, and it will show up here.',
+    'No requests yet. Once a card is 15 days old, the affiliate can ask to be paid for it, and it will show up here.',
 );
 check('a search that finds nobody', heard(noRequestsText(5, 'zed')) === 'Nobody matches “zed”.');
 check('a search on an empty page is still the empty page', noRequestsText(0, 'zed') === noRequestsText(0, ''));
@@ -379,17 +379,18 @@ check('a repeated parameter is not a tab', tabFrom(['pending', 'pending']) === '
 
 console.log('\n- pending -');
 const PENDING_VIEWS = [
-  view('p1', { usr: 'ana', approvedOn: '2026-08-20', amount: 50, card: 'Alpha' }),
-  // Exactly 45 days: requestable today.
-  view('p2', { usr: 'ana', approvedOn: '2026-08-26', amount: 20, card: 'Beta' }),
-  view('p3', { usr: 'dana', approvedOn: '2026-09-01', amount: 30, card: 'Gamma' }),
-  view('p4', { usr: 'dana', approvedOn: '2026-09-09', amount: 40, card: 'Delta' }),
-  view('p5', { usr: '', person: 'House', approvedOn: '2026-08-01', amount: 80, card: 'House Card' }),
-  view('p6', { usr: 'ana', approvedOn: '2026-08-01', amount: 60, card: 'Spoken For' }),
+  view('p1', { usr: 'ana', approvedOn: '2026-09-19', amount: 50, card: 'Alpha' }),
+  // Exactly 15 days: requestable today.
+  view('p2', { usr: 'ana', approvedOn: '2026-09-25', amount: 20, card: 'Beta' }),
+  view('p3', { usr: 'dana', approvedOn: '2026-10-01', amount: 30, card: 'Gamma' }),
+  view('p4', { usr: 'dana', approvedOn: '2026-10-09', amount: 40, card: 'Delta' }),
+  view('p5', { usr: '', person: 'House', approvedOn: '2026-08-31', amount: 80, card: 'House Card' }),
+  view('p6', { usr: 'ana', approvedOn: '2026-08-31', amount: 60, card: 'Spoken For' }),
   // A key with no account behind it: named from the link instead.
-  view('p7', { usr: 'zed', person: 'Zed Link', approvedOn: '2026-08-15', amount: 10, card: 'Epsilon' }),
-  view('p8', { usr: 'ana', approvedOn: '2026-09-25', amount: 15, card: 'Zeta' }),
-  view('p10', { usr: 'dana', approvedOn: '2026-08-27', amount: 12.5, card: 'Eta' }),
+  view('p7', { usr: 'zed', person: 'Zed Link', approvedOn: '2026-09-14', amount: 10, card: 'Epsilon' }),
+  // Approved today, so the whole 15 days still to go.
+  view('p8', { usr: 'ana', approvedOn: '2026-10-10', amount: 15, card: 'Zeta' }),
+  view('p10', { usr: 'dana', approvedOn: '2026-09-26', amount: 12.5, card: 'Eta' }),
 ];
 const pendingBefore = JSON.stringify(PENDING_VIEWS);
 const pending = buildPending(PENDING_VIEWS, byUsr, TODAY, new Set(['p6']));
@@ -412,7 +413,7 @@ check('named from the roster by key', p3.name === 'dana');
 check('with the key', p3.usr === 'dana');
 check('the card', p3.card === 'Gamma');
 check('the customer', p3.customer === 'Customer p3');
-check('the day it was approved', p3.approvedOn === '2026-09-01');
+check('the day it was approved', p3.approvedOn === '2026-10-01');
 check('the amount as given', p3.amount === 30);
 check('how long is left', heard(p3.countdown) === '6 days left', p3);
 check('and the day it will be ready', heard(p3.readyDay) === 'Ready 16 Oct 2026', p3);
@@ -448,9 +449,9 @@ check('the sections, in order', PENDING_SECTIONS.map((s) => s.key).join() === 'r
 check('ready first', heard(PENDING_SECTIONS[0]!.label) === 'Ready to request');
 check(
   'with what it means',
-  heard(PENDING_SECTIONS[0]!.blurb) === '45 days have passed. Nothing happens until the affiliate asks to be paid.',
+  heard(PENDING_SECTIONS[0]!.blurb) === '15 days have passed. Nothing happens until the affiliate asks to be paid.',
 );
-check('then the ones still inside their 45 days', heard(PENDING_SECTIONS[1]!.label) === `Not yet ${PAYOUT_DAYS} days`);
+check('then the ones still inside their 15 days', heard(PENDING_SECTIONS[1]!.label) === `Not yet ${PAYOUT_DAYS} days`);
 check('with what that means', heard(PENDING_SECTIONS[1]!.blurb) === 'Not old enough to request yet.');
 check(
   'nothing ever approved',

@@ -37,17 +37,19 @@ function check(name: string, cond: boolean, extra = '') {
 }
 
 const OLD = '2026-08';
+/** Net 45, from 27 August until 1 October 2026. */
+const NET45 = '2026-08-27';
 const payment = (version: string) =>
   summaryFor(version).find((row) => row.term === 'Payment Terms')?.details ?? '';
 const clause4 = (version: string) =>
   clausesFor(version).find((clause) => clause.n === 4)?.paras[1] ?? '';
 
 console.log('— what the agreement says now —');
-check('payment is Net 45', payment(AGREEMENT_VERSION).startsWith('Net 45'), payment(AGREEMENT_VERSION).slice(0, 40));
-check('and it is 45 calendar days', payment(AGREEMENT_VERSION).includes('45 calendar days'));
-check('section 4 says the same', clause4(AGREEMENT_VERSION).includes('net forty-five (45) days'), clause4(AGREEMENT_VERSION).slice(0, 60));
-check('and names the term the same way', clause4(AGREEMENT_VERSION).includes('"Net 45"'));
-check('and gives the same number of days', clause4(AGREEMENT_VERSION).includes('forty-five (45) calendar days'));
+check('payment is Net 15', payment(AGREEMENT_VERSION).startsWith('Net 15'), payment(AGREEMENT_VERSION).slice(0, 40));
+check('and it is 15 calendar days', payment(AGREEMENT_VERSION).includes('15 calendar days'));
+check('section 4 says the same', clause4(AGREEMENT_VERSION).includes('net fifteen (15) days'), clause4(AGREEMENT_VERSION).slice(0, 60));
+check('and names the term the same way', clause4(AGREEMENT_VERSION).includes('"Net 15"'));
+check('and gives the same number of days', clause4(AGREEMENT_VERSION).includes('fifteen (15) calendar days'));
 /*
  * The payment term is written here in words and counted in days by the payout
  * schedule, which reads PAYMENT_DAYS. If the two ever disagree, somebody is
@@ -56,7 +58,7 @@ check('and gives the same number of days', clause4(AGREEMENT_VERSION).includes('
  */
 check('the schedule counts the days this clause promises', clause4(AGREEMENT_VERSION).includes(`(${PAYMENT_DAYS}) calendar days`));
 check('and the summary names the same term', SUMMARY.find((row) => row.term === 'Payment Terms')!.details.startsWith(`Net ${PAYMENT_DAYS}`));
-check('which is 45', PAYMENT_DAYS === 45);
+check('which is 15', PAYMENT_DAYS === 15);
 /*
  * The half-update this is really guarding: a summary table that says one thing
  * and the clause underneath it that says another. Both are in the same
@@ -64,9 +66,10 @@ check('which is 45', PAYMENT_DAYS === 45);
  */
 check(
   'the summary and the clause cannot disagree about the term',
-  payment(AGREEMENT_VERSION).includes('45') && clause4(AGREEMENT_VERSION).includes('(45)') && !clause4(AGREEMENT_VERSION).includes('(30)'),
+  payment(AGREEMENT_VERSION).includes('15') && clause4(AGREEMENT_VERSION).includes('(15)') && !clause4(AGREEMENT_VERSION).includes('(45)') && !clause4(AGREEMENT_VERSION).includes('(30)'),
 );
 check('nothing in force still says Net 30', !JSON.stringify([SUMMARY, CLAUSES]).includes('Net 30'));
+check('nor Net 45', !JSON.stringify([SUMMARY, CLAUSES]).includes('Net 45') && !JSON.stringify([SUMMARY, CLAUSES]).includes('forty-five'));
 
 console.log('\n— and what it used to say —');
 /*
@@ -93,7 +96,14 @@ check('and neither is no version at all', !wordingKnown(''));
 check('the old summary still says Net 30', payment(OLD).startsWith('Net 30'), payment(OLD).slice(0, 40));
 check('and its 30 calendar days', payment(OLD).includes('30 calendar days'));
 check('the old section 4 says net thirty', clause4(OLD).includes('net thirty (30) days'), clause4(OLD).slice(0, 60));
-check('with none of the new wording in it', !clause4(OLD).includes('forty-five'));
+check('with none of the later wording in it', !clause4(OLD).includes('forty-five') && !clause4(OLD).includes('fifteen'));
+
+check('the Net 45 version is on file too', wordingKnown(NET45));
+check('its summary still says Net 45', payment(NET45).startsWith('Net 45'), payment(NET45).slice(0, 40));
+check('and its 45 calendar days', payment(NET45).includes('45 calendar days'));
+check('its section 4 says net forty-five', clause4(NET45).includes('net forty-five (45) days'), clause4(NET45).slice(0, 60));
+check('with none of the new wording in it', !clause4(NET45).includes('fifteen') && !payment(NET45).includes('Net 15'));
+check('and every other paragraph is today\u2019s', clausesFor(NET45).every((clause) => clause.paras.every((para, at) => (clause.n === 4 && at === 1) || para === CLAUSES.find((c) => c.n === clause.n)!.paras[at])));
 
 /*
  * The strong one. Everything except the two archived paragraphs has to come
@@ -162,10 +172,11 @@ console.log('\n— every paragraph, in order —');
 const now = allParagraphs();
 const then = allParagraphs(OLD);
 check('the two versions run to the same length', now.length === then.length, `${now.length} vs ${then.length}`);
-check('today reads as Net 45', now.some((line) => line.text.includes('net forty-five (45) days')));
+check('today reads as Net 15', now.some((line) => line.text.includes('net fifteen (15) days')));
+check('and never as Net 45', !now.some((line) => line.text.includes('net forty-five (45) days')));
 check('and never as Net 30', !now.some((line) => line.text.includes('net thirty (30) days')));
 check('the signed version reads as Net 30', then.some((line) => line.text.includes('net thirty (30) days')));
-check('and never as Net 45', !then.some((line) => line.text.includes('net forty-five (45) days')));
+check('and never as Net 45 or Net 15', !then.some((line) => line.text.includes('net forty-five (45) days') || line.text.includes('net fifteen (15) days')));
 check('the headings are the same either way', now.map((l) => l.heading).join() === then.map((l) => l.heading).join());
 /*
  * The governing state is filled in on the way out of allParagraphs, so it has
@@ -191,7 +202,7 @@ clausesFor(OLD);
 summaryFor(OLD);
 allParagraphs(OLD);
 check('reading an old version leaves the current one alone', JSON.stringify(CLAUSES) === before);
-check('and the summary too', SUMMARY.find((row) => row.term === 'Payment Terms')!.details.startsWith('Net 45'));
+check('and the summary too', SUMMARY.find((row) => row.term === 'Payment Terms')!.details.startsWith('Net 15'));
 
 console.log(`\nagreement: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

@@ -232,7 +232,8 @@ async function main() {
   console.log('\n— the version somebody actually signed —');
   /*
    * The fixture is signed under 2026-08, which is Net 30. Payment terms moved
-   * to Net 45 on 27 August 2026, and four people had already signed by then.
+   * to Net 45 on 27 August 2026, when four people had already signed, and to
+   * Net 15 on 1 October 2026.
    * Every copy of a signed agreement is drawn on demand out of lib/agreement,
    * so unless the old wording is read back for an old row, those four
    * downloads quietly become a contract nobody signed, over their signature.
@@ -240,13 +241,13 @@ async function main() {
   const signedText = drawn(await pdfContent(agBytes));
   check('a copy signed under 2026-08 still says net thirty', signedText.includes('net thirty (30) days'));
   check('and its summary row still says Net 30', signedText.includes('Net 30'));
-  check('with none of the new term anywhere on it', !signedText.includes('Net 45') && !signedText.includes('forty-five'));
+  check('with none of the later terms anywhere on it', !signedText.includes('Net 45') && !signedText.includes('forty-five') && !signedText.includes('Net 15') && !signedText.includes('fifteen (15)'));
   check('and it is stamped with the version it was signed under', signedText.includes('Agreement version 2026-08'));
 
   const today = drawn(await pdfContent(await renderAgreementPdf({ ...agreement, agreementVersion: AGREEMENT_VERSION })));
-  check('a copy signed today says net forty-five', today.includes('net forty-five (45) days'));
-  check('and its summary row says Net 45', today.includes('Net 45'));
-  check('with none of the old term anywhere on it', !today.includes('Net 30') && !today.includes('net thirty'));
+  check('a copy signed today says net fifteen', today.includes('net fifteen (15) days'));
+  check('and its summary row says Net 15', today.includes('Net 15'));
+  check('with none of the old terms anywhere on it', !today.includes('Net 30') && !today.includes('net thirty') && !today.includes('Net 45') && !today.includes('forty-five'));
   check('the rest of the document is the same either way', today.includes('12. General') && signedText.includes('12. General'));
   check('and so is the signature block', today.includes('SIGNATURES') && signedText.includes('SIGNATURES'));
 

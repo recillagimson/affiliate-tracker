@@ -36,7 +36,7 @@ type PageProps = {
 /**
  * What affiliates have asked to be paid, and what they could ask for next.
  *
- * There is no payout schedule any more. Every card runs on its own clock, 45
+ * There is no payout schedule any more. Every card runs on its own clock, 15
  * days from the day it was approved, and an affiliate chooses when to ask for
  * the cards that are ready. So this page is two lists rather than a calendar:
  * Requests, the payments somebody has asked for, which are the admin's to make;
@@ -134,7 +134,7 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
    */
   const pending = readError || error ? null : buildPending(views, byUsr, today, committed);
   const requestedCount = readError ? null : countRequested(rows);
-  // Both numbers: what can be asked for, and what is still inside its 45 days.
+  // Both numbers: what can be asked for, and what is still inside its 15 days.
   const pendingTab = pending ? pendingTabCounts(pending) : null;
 
   return (

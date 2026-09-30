@@ -660,7 +660,7 @@ export function payeeBankLines(payee: Payee): { label: string; value: string }[]
 
 /* ------------------------------------------------------- counting pending -- */
 
-/** How many cards are ready to request, and how many are still inside their 45 days. */
+/** How many cards are ready to request, and how many are still inside their 15 days. */
 export function pendingCounts(split: { ready: unknown[]; countingDown: unknown[] }): {
   ready: number;
   waiting: number;

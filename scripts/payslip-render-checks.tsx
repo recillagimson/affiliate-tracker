@@ -148,9 +148,9 @@ const LOAD: Loaded = {
   submissions: [{ id: 'abc1', fullName: 'Dana Okafor', email: 'dana@example.test' } as Submission],
   conversions: [
     conversion('101', 'platinum', '2026-08-01', 70, 'lead:abc1'),
-    conversion('102', 'cashback', '2026-08-26', 70.5),
-    conversion('103', 'platinum', '2026-08-27', 40, 'lead:abc1'),
-    conversion('104', 'cashback', '2026-09-28', 25),
+    conversion('102', 'cashback', '2026-09-25', 70.5),
+    conversion('103', 'platinum', '2026-09-26', 40, 'lead:abc1'),
+    conversion('104', 'cashback', '2026-10-08', 25),
     conversion('105', 'platinum', '2026-08-02', 60),
     conversion('108', '', '2026-08-03', 12.25),
   ],
@@ -193,7 +193,7 @@ check(
 );
 check('no card is ticked', !/<input[^>]*checked=""/.test(none));
 check('every card is on the page', ready.every((row) => none.includes(row.card)));
-check('with its day', none.includes('1 Aug 2026') && none.includes('26 Aug 2026'));
+check('with its day', none.includes('1 Aug 2026') && none.includes('25 Sep 2026'));
 check('and its money', none.includes('$70.50') && none.includes('$12.25'));
 const idle = submitButton(none);
 check('there is a Request payment button', idle !== null);
@@ -432,11 +432,11 @@ const counting = render(<CountingDown rows={countingDown} />);
 check('the section is named', counting.includes('>Counting down</h2>'));
 check('one day left', counting.includes('1 day left'));
 check('with the day it turns ready', counting.includes('Ready 11 Oct 2026'));
-check('thirty-three days left', counting.includes('33 days left'));
-check('with its day too', counting.includes('Ready 12 Nov 2026'));
-check('soonest first', counting.indexOf('1 day left') < counting.indexOf('33 days left'));
+check('thirteen days left', counting.includes('13 days left'));
+check('with its day too', counting.includes('Ready 23 Oct 2026'));
+check('soonest first', counting.indexOf('1 day left') < counting.indexOf('13 days left'));
 check('the card and customer are named', counting.includes('Platinum Card') && counting.includes('Dana Okafor'));
-check('and the day it was approved', counting.includes('27 Aug 2026') && counting.includes('28 Sep 2026'));
+check('and the day it was approved', counting.includes('26 Sep 2026') && counting.includes('8 Oct 2026'));
 check('and the money', counting.includes('$40') && counting.includes('$25'));
 check('there is nothing to tick while a card is counting down', !counting.includes('type="checkbox"'));
 check('nothing counting down draws nothing at all', renderToStaticMarkup(<CountingDown rows={[]} />) === '');

@@ -11,7 +11,7 @@ import { bankProblems, type BankInput } from '@/lib/onboarding';
  *
  * The one step that does not bar the door. Somebody may genuinely not have this
  * to hand — a new account, a shared business account, a bank that has to be
- * phoned — and Net 45 leaves six weeks to produce it in. So the app opens without
+ * phoned — and Net 15 leaves two weeks to produce it in. So the app opens without
  * it and a banner nags until it arrives.
  *
  * `alreadySaved` changes the wording rather than the form: replacing a bank
