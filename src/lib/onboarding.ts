@@ -560,8 +560,22 @@ export function keepsTin(
 export type BankInput = {
   accountName: string;
   bankName: string;
+  routingNumber: string;
   accountNumber: string;
 };
+
+/**
+ * A US ABA routing number: nine digits whose weighted sum (3, 7, 1 repeating)
+ * is a multiple of ten. The checksum is what catches a transposed or mistyped
+ * digit, which would otherwise send an ACH to the wrong bank or bounce it.
+ */
+export function isRoutingNumber(raw: string): boolean {
+  const digits = digitsOf(raw ?? '');
+  if (!/^\d{9}$/.test(digits)) return false;
+  const weights = [3, 7, 1, 3, 7, 1, 3, 7, 1];
+  const sum = digits.split('').reduce((total, digit, at) => total + Number(digit) * weights[at]!, 0);
+  return sum % 10 === 0;
+}
 
 /** `accountOnFile` says an account number is already sealed away, so leaving
  *  the field empty corrects the name or the bank without retyping it. */
@@ -572,6 +586,9 @@ export function bankProblems(
   const problems: Record<string, string> = {};
   if (!input.accountName?.trim()) problems.accountName = 'The name on the account.';
   if (!input.bankName?.trim()) problems.bankName = 'Which bank.';
+  if (!isRoutingNumber(input.routingNumber ?? '')) {
+    problems.routingNumber = 'A 9-digit routing number. Check it against a cheque or your bank app.';
+  }
   if (keepsAccountNumber(input, options)) return problems;
   const digits = digitsOf(input.accountNumber ?? '');
   // No country agrees on a length. Four is the shortest that could identify

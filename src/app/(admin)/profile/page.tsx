@@ -65,7 +65,9 @@ export default async function ProfilePage() {
       ? `Filed ${formatDateTime(w9.signedAt)}, ${maskTin(w9.tinLast4, w9.tinType)}`
       : 'What the IRS needs before anyone can be paid.',
     bank: bank
-      ? `${bank.bankName}, ${maskAccount(bank.accountLast4)}`
+      ? bank.routingNumber
+        ? `${bank.bankName}, routing ${bank.routingNumber}, ${maskAccount(bank.accountLast4)}`
+        : `${bank.bankName}, ${maskAccount(bank.accountLast4)}. Add your routing number.`
       : 'Where the ACH payment goes.',
   };
 

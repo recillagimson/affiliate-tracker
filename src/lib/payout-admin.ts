@@ -596,13 +596,13 @@ export type Payee = {
   mobile: string;
   position: string;
   usr: string;
-  bank: { accountName: string; bankName: string; last4: string; savedAt: string } | null;
+  bank: { accountName: string; bankName: string; routingNumber: string; last4: string; savedAt: string } | null;
 };
 
 /** Keyed by account id, which is what a request carries. A plain object: it crosses to the browser. */
 export function buildPayees(
   people: { userId: string; username: string; fullName: string; email: string; position: string; mobile: string; usr: string }[],
-  banks: { userId: string; savedAt: string; accountName: string; bankName: string; accountLast4: string }[],
+  banks: { userId: string; savedAt: string; accountName: string; bankName: string; routingNumber?: string; accountLast4: string }[],
 ): Record<string, Payee> {
   const byUser = new Map(banks.map((bank) => [bank.userId, bank]));
   const payees: Record<string, Payee> = {};
@@ -622,6 +622,7 @@ export function buildPayees(
         ? {
             accountName: bank.accountName,
             bankName: bank.bankName,
+            routingNumber: bank.routingNumber ?? '',
             last4: bank.accountLast4,
             savedAt: bank.savedAt,
           }
@@ -651,6 +652,7 @@ export function payeeBankLines(payee: Payee): { label: string; value: string }[]
   return [
     { label: 'Account name', value: payee.bank.accountName },
     { label: 'Bank', value: payee.bank.bankName },
+    { label: 'Routing number', value: payee.bank.routingNumber || 'Not on file' },
     {
       label: 'Account number',
       value: payee.bank.last4 ? maskAccount(payee.bank.last4) : 'Not on file',

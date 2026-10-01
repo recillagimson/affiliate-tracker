@@ -35,6 +35,7 @@ const bank = {
   savedAt: '2026-08-01T00:00:00Z',
   accountName: 'Stefany Rusinque',
   bankName: 'Chase',
+  routingNumber: '021000021',
   accountLast4: '4321',
 };
 
@@ -49,7 +50,7 @@ check('their details', payees.u1, {
   mobile: '+1 555 0100',
   position: 'Affiliate',
   usr: 'd4wz7v',
-  bank: { accountName: 'Stefany Rusinque', bankName: 'Chase', last4: '4321', savedAt: '2026-08-01T00:00:00Z' },
+  bank: { accountName: 'Stefany Rusinque', bankName: 'Chase', routingNumber: '021000021', last4: '4321', savedAt: '2026-08-01T00:00:00Z' },
 });
 check(
   'somebody with no bank details on file still reads as a person',
@@ -79,6 +80,7 @@ check(
 check('the account number is masked, never whole', payeeBankLines(payees.u1!), [
   { label: 'Account name', value: 'Stefany Rusinque' },
   { label: 'Bank', value: 'Chase' },
+  { label: 'Routing number', value: '021000021' },
   { label: 'Account number', value: '••••4321' },
 ]);
 check(
@@ -88,8 +90,18 @@ check(
 );
 check(
   'bank details saved with no number behind them say so',
-  payeeBankLines({ ...payees.u1!, bank: { accountName: 'S R', bankName: 'Chase', last4: '', savedAt: '' } }).at(-1),
+  payeeBankLines({ ...payees.u1!, bank: { accountName: 'S R', bankName: 'Chase', routingNumber: '', last4: '', savedAt: '' } }).at(-1),
   { label: 'Account number', value: 'Not on file' },
+);
+check(
+  'a row saved before routing numbers were asked for says so',
+  payeeBankLines({ ...payees.u1!, bank: { ...payees.u1!.bank!, routingNumber: '' } })[2],
+  { label: 'Routing number', value: 'Not on file' },
+);
+check(
+  'and an older bank row with no routing number reads as one',
+  buildPayees([person], [{ ...bank, routingNumber: undefined }]).u1!.bank!.routingNumber,
+  '',
 );
 
 console.log('\n— the two counts on Pending —');

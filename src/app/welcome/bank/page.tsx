@@ -35,7 +35,10 @@ export default async function BankPage() {
   const waived = isBypassed(bypass);
   if (!canOpen(state, 'bank', { bypassed: waived })) redirect(waived ? '/profile' : '/welcome');
 
-  const existing = state.bank ? await readBank(viewer.id).catch(() => null) : null;
+  // Read whether or not the step is done: a row with no routing number leaves
+  // it open, and its name, bank and account number should still be kept.
+  const existing = await readBank(viewer.id).catch(() => null);
+  const needsRouting = Boolean(existing) && !existing?.routingNumber;
   const back = previousStep('bank', { bypassed: waived });
   const { index, total } = stepPosition('bank', { bypassed: waived });
 
@@ -56,14 +59,23 @@ export default async function BankPage() {
         <OnboardingRail current="bank" state={state} bypassed={waived} />
       </div>
 
-      {existing ? (
+      {needsRouting ? (
+        <p role="alert" className="warn-note mt-5">
+          <span aria-hidden className="warn-note-mark">
+            !
+          </span>
+          We now need your bank&rsquo;s routing number to send ACH payments. Add it below and save. Your
+          account number is already on file, so leave that field empty.
+        </p>
+      ) : existing ? (
         <div className="panel mt-5 border-leaf-edge bg-leaf-wash p-5">
           <p className="text-[13px] text-ink">
             <span aria-hidden className="mr-1.5 font-semibold text-leaf-text">
               ✓
             </span>
             On file{existing.savedAt ? ` since ${formatDateTime(existing.savedAt)}` : ''}:{' '}
-            <strong>{existing.accountName}</strong> at <strong>{existing.bankName}</strong>,{' '}
+            <strong>{existing.accountName}</strong> at <strong>{existing.bankName}</strong>, routing{' '}
+            <span className="tnum">{existing.routingNumber}</span>, account{' '}
             <span className="tnum">{maskAccount(existing.accountLast4)}</span>.
           </p>
           <p className="plain mt-1.5">
@@ -80,6 +92,7 @@ export default async function BankPage() {
         alreadySaved={Boolean(existing)}
         initialAccountName={existing?.accountName ?? ''}
         initialBankName={existing?.bankName ?? ''}
+        initialRoutingNumber={existing?.routingNumber ?? ''}
         accountLast4={existing?.accountLast4 ?? ''}
         backTo={back ? { path: back.path, label: back.label } : undefined}
         continueTo="/"

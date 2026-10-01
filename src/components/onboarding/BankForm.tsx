@@ -22,6 +22,7 @@ export function BankForm({
   alreadySaved,
   initialAccountName = '',
   initialBankName = '',
+  initialRoutingNumber = '',
   accountLast4 = '',
   backTo,
   continueTo = '',
@@ -30,6 +31,7 @@ export function BankForm({
   alreadySaved: boolean;
   initialAccountName?: string;
   initialBankName?: string;
+  initialRoutingNumber?: string;
   /** The four digits of what is already stored, so the field can be left empty
    *  to keep it. The rest of the number cannot be read back. */
   accountLast4?: string;
@@ -40,6 +42,7 @@ export function BankForm({
   const [values, setValues] = useState<BankInput>({
     accountName: initialAccountName,
     bankName: initialBankName,
+    routingNumber: initialRoutingNumber,
     accountNumber: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -114,7 +117,7 @@ export function BankForm({
           {errors.accountName ? <span className="field-error">{errors.accountName}</span> : null}
         </label>
 
-        <label className="block">
+        <label className="block sm:col-span-2">
           <span className="field-label">Bank name</span>
           <input
             className="field mt-1.5"
@@ -125,6 +128,24 @@ export function BankForm({
             aria-invalid={errors.bankName ? true : undefined}
           />
           {errors.bankName ? <span className="field-error">{errors.bankName}</span> : null}
+        </label>
+
+        <label className="block">
+          <span className="field-label">Routing number</span>
+          <input
+            className="field tnum mt-1.5"
+            value={values.routingNumber}
+            onChange={(e) => set('routingNumber', e.target.value)}
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={11}
+            placeholder="9 digits"
+            aria-invalid={errors.routingNumber ? true : undefined}
+          />
+          <span className="field-note">
+            The 9-digit ABA number for ACH. It is on a cheque, bottom left, and in your bank app.
+          </span>
+          {errors.routingNumber ? <span className="field-error">{errors.routingNumber}</span> : null}
         </label>
 
         <label className="block">

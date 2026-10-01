@@ -11,6 +11,7 @@
 import {
   agreementProblems,
   bankProblems,
+  isRoutingNumber,
   canOpen,
   firstMissingRequired,
   gateFor,
@@ -267,7 +268,8 @@ check('but not to an LLC taxed as a corporation', !needsForeignPartnersQuestion(
 check('nor to an individual', !needsForeignPartnersQuestion('individual', ''));
 
 console.log('\n— bank details —');
-const goodBank = { accountName: 'Arthur Reyes', bankName: 'Example Bank', accountNumber: '000123456789' };
+// 021000021 is a real, published routing number (JPMorgan Chase, New York): 3·0+7·2+1·1+3·0+7·0+1·0+3·0+7·2+1·1 = 30.
+const goodBank = { accountName: 'Arthur Reyes', bankName: 'Example Bank', routingNumber: '021000021', accountNumber: '000123456789' };
 check('a filled form has no problems', Object.keys(bankProblems(goodBank)).length === 0);
 check('a missing name is caught', Boolean(bankProblems({ ...goodBank, accountName: '' }).accountName));
 check('a missing bank is caught', Boolean(bankProblems({ ...goodBank, bankName: '' }).bankName));
@@ -275,6 +277,16 @@ check('three digits is not an account', Boolean(bankProblems({ ...goodBank, acco
 check('eighteen is not either', Boolean(bankProblems({ ...goodBank, accountNumber: '1'.repeat(18) }).accountNumber));
 check('four is', Object.keys(bankProblems({ ...goodBank, accountNumber: '1234' })).length === 0);
 check('and dashes do not count against it', Object.keys(bankProblems({ ...goodBank, accountNumber: '0001-2345-6789' })).length === 0);
+check('a missing routing number is caught', Boolean(bankProblems({ ...goodBank, routingNumber: '' }).routingNumber));
+check('eight digits is not a routing number', !isRoutingNumber('02100002'));
+check('nor is ten', !isRoutingNumber('0210000210'));
+check('a valid one passes', isRoutingNumber('021000021'));
+check('so does another real one', isRoutingNumber('011000015'));
+check('spaces and dashes are ignored', isRoutingNumber('0210-0002 1'));
+check('one digit off fails the checksum', !isRoutingNumber('021000022'));
+check('two digits swapped fail it too', !isRoutingNumber('201000021'));
+check('a typo is reported on the field', Boolean(bankProblems({ ...goodBank, routingNumber: '021000022' }).routingNumber));
+check('the routing number is required even when an account is on file', Boolean(bankProblems({ ...goodBank, routingNumber: '', accountNumber: '' }, { accountOnFile: true }).routingNumber));
 
 console.log('\n— masking —');
 check('digits are pulled out of formatting', digitsOf('(415) 555-0123') === '4155550123');
@@ -423,7 +435,7 @@ check(
 );
 
 // The account number, which has no kind to match.
-const blankAccount = { accountName: 'Arthur Reyes', bankName: 'Example Bank', accountNumber: '' };
+const blankAccount = { accountName: 'Arthur Reyes', bankName: 'Example Bank', routingNumber: '021000021', accountNumber: '' };
 check('an empty account number is normally a problem', Boolean(bankProblems(blankAccount).accountNumber));
 check(
   'but not when one is already on file',

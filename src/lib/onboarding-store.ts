@@ -136,7 +136,8 @@ const PROGRESS_COLUMNS =
   'id, profile_completed_at, approval_status, submitted_at, reviewed_at, reviewed_by, ' +
   'review_note, approval_emailed_at, onboarding_bypassed_at, onboarding_bypassed_by, ' +
   'onboarding_bypass_note, affiliate_agreements(user_id, signed_at), ' +
-  'w9_forms(user_id, signed_at), bank_details(user_id)';
+  'w9_forms(user_id, signed_at), bank_details(user_id, routing_number)';
+const PROGRESS_COLUMNS_BEFORE_ROUTING = PROGRESS_COLUMNS.replace('bank_details(user_id, routing_number)', 'bank_details(user_id)');
 
 /** When each signed document was filed, for the two steps that have one. Null
  *  where there is no document. Nothing else is read from those rows here. */
@@ -160,13 +161,43 @@ export type Progress = {
  * the children — nothing here needs the SSN, and a select that does not ask for
  * it is a select that cannot leak it.
  */
+/**
+ * Bank details count as done only with a routing number. Rows saved before it
+ * was asked for have '', which leaves the step open so the affiliate is asked
+ * for it; their sealed account number stays.
+ */
+function bankComplete(value: unknown, routingKnown = true): boolean {
+  if (!routingKnown) return embedded(value);
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!row || typeof row !== 'object') return false;
+  return String((row as Record<string, unknown>).routing_number ?? '') !== '';
+}
+
+/**
+ * A database that has not had 20261002120000_bank_routing.sql yet. These reads
+ * run on every page, so rather than take the whole app down they retry without
+ * the column and treat bank details as they were before routing numbers.
+ */
+function noRoutingColumn(error: PostgrestErrorish | null): boolean {
+  return Boolean(error) && ['42703', 'PGRST204'].includes(error?.code ?? '') && /routing_number/.test(error?.message ?? '');
+}
+
 export async function readProgress(userId: string): Promise<Progress> {
   requireStore();
-  const { data, error } = await getSupabaseClient()
+  let routingKnown = true;
+  let { data, error } = await getSupabaseClient()
     .from('users')
     .select(PROGRESS_COLUMNS)
     .eq('id', userId)
     .maybeSingle();
+  if (noRoutingColumn(error)) {
+    routingKnown = false;
+    ({ data, error } = await getSupabaseClient()
+      .from('users')
+      .select(PROGRESS_COLUMNS_BEFORE_ROUTING)
+      .eq('id', userId)
+      .maybeSingle());
+  }
   if (error) fail('reading onboarding progress', error);
   if (!data) {
     return {
@@ -183,7 +214,7 @@ export async function readProgress(userId: string): Promise<Progress> {
       profile: Boolean(row.profile_completed_at),
       agreement: embedded(row.affiliate_agreements),
       w9: embedded(row.w9_forms),
-      bank: embedded(row.bank_details),
+      bank: bankComplete(row.bank_details, routingKnown),
     },
     approval: approvalFrom(row),
     bypass: bypassFrom(row),
@@ -221,17 +252,26 @@ export type OnboardingSummary = {
 
 export async function listOnboarding(): Promise<OnboardingSummary[]> {
   requireStore();
-  const { data, error } = await getSupabaseClient()
+  const columns =
+    'id, created_at, username, full_name, email, position, mobile, usr, role, profile_completed_at, ' +
+    'approval_status, submitted_at, reviewed_at, reviewed_by, review_note, ' +
+    'approval_emailed_at, onboarding_bypassed_at, onboarding_bypassed_by, ' +
+    'onboarding_bypass_note, affiliate_agreements(signed_at), w9_forms(signed_at), ' +
+    'bank_details(saved_at, routing_number)';
+  let routingKnown = true;
+  let { data, error } = await getSupabaseClient()
     .from('users')
-    .select(
-      'id, created_at, username, full_name, email, position, mobile, usr, role, profile_completed_at, ' +
-        'approval_status, submitted_at, reviewed_at, reviewed_by, review_note, ' +
-        'approval_emailed_at, onboarding_bypassed_at, onboarding_bypassed_by, ' +
-        'onboarding_bypass_note, affiliate_agreements(signed_at), w9_forms(signed_at), ' +
-        'bank_details(saved_at)',
-    )
+    .select(columns)
     .eq('role', 'affiliate')
     .order('created_at', { ascending: true });
+  if (noRoutingColumn(error)) {
+    routingKnown = false;
+    ({ data, error } = await getSupabaseClient()
+      .from('users')
+      .select(columns.replace('bank_details(saved_at, routing_number)', 'bank_details(saved_at)'))
+      .eq('role', 'affiliate')
+      .order('created_at', { ascending: true }));
+  }
   if (error) fail('listing onboarding', error);
 
   /** The embed is an object or a one-element array; either way we want the date. */
@@ -262,7 +302,7 @@ export async function listOnboarding(): Promise<OnboardingSummary[]> {
         profile: Boolean(row.profile_completed_at),
         agreement: agreementSignedAt !== null,
         w9: w9SignedAt !== null,
-        bank: bankSavedAt !== null,
+        bank: bankSavedAt !== null && bankComplete(row.bank_details, routingKnown),
       },
       approval: approvalFrom(row),
       bypass: bypassFrom(row),
@@ -702,6 +742,8 @@ export async function readW9(userId: string): Promise<W9Record | null> {
 export type BankWrite = {
   accountName: string;
   bankName: string;
+  /** Nine digits, checked by lib/onboarding isRoutingNumber. Not sealed: it names a bank, not an account. */
+  routingNumber: string;
   /** Plaintext, sealed below. Empty means the number already on file stands,
    *  so a misspelled account name can be fixed on its own. */
   accountNumber: string;
@@ -712,6 +754,8 @@ export type BankRecord = {
   savedAt: string;
   accountName: string;
   bankName: string;
+  /** '' on a row saved before routing numbers were asked for. */
+  routingNumber: string;
   accountLast4: string;
 };
 
@@ -722,6 +766,7 @@ export async function saveBank(userId: string, input: BankWrite): Promise<void> 
     saved_at: new Date().toISOString(),
     account_name: input.accountName.trim(),
     bank_name: input.bankName.trim(),
+    routing_number: digitsOf(input.routingNumber),
   };
 
   // Same shape as saveW9: an empty number means leave the sealed one alone.
@@ -754,11 +799,18 @@ export async function saveBank(userId: string, input: BankWrite): Promise<void> 
 
 export async function readBank(userId: string): Promise<BankRecord | null> {
   requireStore();
-  const { data, error } = await getSupabaseClient()
+  let { data, error } = await getSupabaseClient()
     .from('bank_details')
-    .select('user_id, saved_at, account_name, bank_name, account_number_last4')
+    .select('user_id, saved_at, account_name, bank_name, routing_number, account_number_last4')
     .eq('user_id', userId)
     .maybeSingle();
+  if (noRoutingColumn(error)) {
+    ({ data, error } = await getSupabaseClient()
+      .from('bank_details')
+      .select('user_id, saved_at, account_name, bank_name, account_number_last4')
+      .eq('user_id', userId)
+      .maybeSingle());
+  }
   if (error) fail('reading the bank details', error);
   if (!data) return null;
   const row = data as Record<string, unknown>;
@@ -767,6 +819,7 @@ export async function readBank(userId: string): Promise<BankRecord | null> {
     savedAt: String(row.saved_at ?? ''),
     accountName: String(row.account_name ?? ''),
     bankName: String(row.bank_name ?? ''),
+    routingNumber: String(row.routing_number ?? ''),
     accountLast4: String(row.account_number_last4 ?? ''),
   };
 }

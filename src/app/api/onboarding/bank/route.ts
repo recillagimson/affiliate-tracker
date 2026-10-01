@@ -36,18 +36,19 @@ export async function POST(request: Request) {
   const input = {
     accountName: str(body, 'accountName'),
     bankName: str(body, 'bankName'),
+    routingNumber: str(body, 'routingNumber'),
     accountNumber: str(body, 'accountNumber'),
   };
 
   // Same rule as the W-9: whether there is something to keep is the database's
-  // answer, not the browser's.
+  // answer, not the browser's. Read even when the step is not done: a row saved
+  // before routing numbers were asked for leaves the step open, and its owner
+  // should not have to retype the account number just to add one.
   let accountOnFile = false;
-  if (state.bank) {
-    try {
-      accountOnFile = Boolean(await readBank(viewer.id));
-    } catch (error) {
-      return storeResponse(error);
-    }
+  try {
+    accountOnFile = Boolean(await readBank(viewer.id));
+  } catch (error) {
+    return storeResponse(error);
   }
 
   const problems = bankProblems(input, { accountOnFile });

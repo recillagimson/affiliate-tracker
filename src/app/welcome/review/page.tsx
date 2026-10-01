@@ -127,7 +127,9 @@ export default async function ReviewPage() {
             label="Bank details"
             value={
               bank
-                ? `${bank.accountName} at ${bank.bankName}, ${maskAccount(bank.accountLast4)}`
+                ? bank.routingNumber
+                  ? `${bank.accountName} at ${bank.bankName}, routing ${bank.routingNumber}, ${maskAccount(bank.accountLast4)}`
+                  : `${bank.accountName} at ${bank.bankName}, ${maskAccount(bank.accountLast4)}. Routing number still needed.`
                 : 'Not on file yet. Nothing can be paid out until it is.'
             }
             href="/welcome/bank"

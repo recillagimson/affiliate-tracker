@@ -287,10 +287,11 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       <section className="panel mt-5 p-6 sm:p-7">
         <h2 className="text-[15px] font-semibold">Bank details</h2>
         {bank ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Fact label="Saved" value={formatDateTime(bank.savedAt)} />
             <Fact label="Name on the account" value={bank.accountName} />
             <Fact label="Bank" value={bank.bankName} />
+            <Fact label="Routing number" value={bank.routingNumber || 'Not on file yet'} />
             <RevealSecret
               userId={id}
               what="account"
