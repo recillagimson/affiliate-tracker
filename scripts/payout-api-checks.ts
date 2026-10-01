@@ -166,9 +166,9 @@ console.log('\n\u2014 the ids an affiliate chooses \u2014');
 }
 
 console.log('\n\u2014 who may ask to be paid \u2014');
-check('an affiliate may request', payslipGate(SAM, 'request') === null);
+check('an affiliate may not request: payouts are monthly now', heard(payslipGate(SAM, 'request'), true)?.error === 'Payouts are now sent monthly, so there is nothing to request.');
 check('an affiliate may confirm', payslipGate(SAM, 'confirm') === null);
-check('an admin in Client View may request (A7)', payslipGate(VIEWING, 'request') === null);
+check('nor an admin in Client View', payslipGate(VIEWING, 'request')?.status === 403);
 check('and confirm', payslipGate(VIEWING, 'confirm') === null);
 {
   const admin = heard(payslipGate(ADMIN, 'request'), true);

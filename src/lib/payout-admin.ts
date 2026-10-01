@@ -449,17 +449,94 @@ export function noRequestsText(total: number, query: string): string {
 
 /* -------------------------------------------------------------------- tab --- */
 
-export type PayoutTab = 'requests' | 'pending';
+export type PayoutTab = 'requests' | 'pending' | 'monthly';
 
 /**
  * Which tab a ?tab= value opens.
  *
- * Exactly "pending" opens Pending, and anything else, including no value, a
- * misspelling or the parameter given twice, opens Requests. A link somebody
- * mistyped should land on the tab that needs doing, not on an error.
+ * Exactly "pending" opens Pending and exactly "monthly" opens Monthly; anything
+ * else, including no value, a misspelling or the parameter given twice, opens
+ * Requests. A link somebody mistyped should land on a tab, not on an error.
  */
 export function tabFrom(value: string | string[] | undefined): PayoutTab {
-  return value === 'pending' ? 'pending' : 'requests';
+  if (value === 'pending') return 'pending';
+  if (value === 'monthly') return 'monthly';
+  return 'requests';
+}
+
+/* ---------------------------------------------------------------- monthly --- */
+
+/** One unpaid approval in an affiliate's monthly payout. */
+export type MonthlyCard = {
+  id: string;
+  card: string;
+  customer: string;
+  approvedOn: string;
+  /** The affiliate's own share. */
+  amount: number;
+};
+
+/** One affiliate on the Monthly tab: everything they are owed that has not been paid. */
+export type MonthlyRow = {
+  userId: string;
+  name: string;
+  usr: string;
+  cards: MonthlyCard[];
+  total: number;
+};
+
+/**
+ * The Monthly tab: every affiliate with approvals not yet paid, and the total.
+ *
+ * `views` must already be priced as the affiliate's share (asAffiliateShare,
+ * then describeConversions with gross off), as for buildPending. Every
+ * approved card counts, whatever its age: payroll pays monthly, with no
+ * 15-day wait. Left out: house cards, cards worth nothing to their affiliate
+ * (LGF employees' and admins', see shareFor), cards already on a request or
+ * paid, and keys with no account behind them, which have nobody to pay.
+ *
+ * Biggest total first, so the largest transfers are at the top; oldest
+ * approval first within an affiliate.
+ */
+export function buildMonthly(
+  views: ConversionView[],
+  userIdByUsr: Map<string, string>,
+  byUsr: Map<string, Person>,
+  committed: CommittedIds,
+): MonthlyRow[] {
+  const groups = new Map<string, MonthlyRow>();
+  for (const row of views) {
+    if (!row.usr || committed.has(row.id)) continue;
+    if (typeof row.amount !== 'number' || !Number.isFinite(row.amount) || row.amount <= 0) continue;
+    const userId = userIdByUsr.get(row.usr);
+    if (!userId) continue;
+    let group = groups.get(row.usr);
+    if (!group) {
+      group = { userId, name: byUsr.get(row.usr)?.name || row.person || row.usr, usr: row.usr, cards: [], total: 0 };
+      groups.set(row.usr, group);
+    }
+    group.cards.push({
+      id: row.id,
+      card: row.card || BLANK,
+      customer: row.client || BLANK,
+      approvedOn: dayOf(row.approvedOn),
+      amount: row.amount,
+    });
+  }
+  const rows = [...groups.values()];
+  for (const row of rows) {
+    row.cards.sort((a, b) => (a.approvedOn < b.approvedOn ? -1 : a.approvedOn > b.approvedOn ? 1 : 0));
+    row.total = totalOf(row.cards);
+  }
+  return rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+}
+
+/** The line above the Monthly list. */
+export function describeMonthly(rows: MonthlyRow[]): string {
+  if (rows.length === 0) return '';
+  const cards = rows.reduce((sum, row) => sum + row.cards.length, 0);
+  const people = rows.length === 1 ? '1 affiliate' : `${rows.length} affiliates`;
+  return `${people} to pay, ${describeCardCount(cards)}, ${formatMoney(totalOf(rows.map((row) => ({ amount: row.total }))))} in total.`;
 }
 
 /* ---------------------------------------------------------------- pending --- */

@@ -265,6 +265,96 @@ export function statusChip(status: PayoutRequestStatus): StatusChip {
   return { label: 'Requested', className: 'chip-gold' };
 }
 
+/* -------------------------------------------------------- payment history --- */
+
+/** Where one approved card stands: paid, on a payment being processed, or waiting for the next monthly payout. */
+export type HistoryStatus = 'paid' | 'processing' | 'unpaid';
+
+export type HistoryRow = CardRow & {
+  status: HistoryStatus;
+  chip: StatusChip;
+  /** "Paid 8 Oct 2026", or what happens next. */
+  when: string;
+  /** The payslip it was paid on, or '' when there is none yet. */
+  href: string;
+};
+
+/**
+ * Every approved card of the reader's, newest approval first, each with where
+ * its money stands.
+ *
+ * A card is paid when it is on a paid payout, processing when it is on a
+ * request still waiting to be paid (filed before payouts went monthly), and
+ * otherwise waiting for the next monthly payout. A cancelled request does not
+ * count: its cards were released and are unpaid again.
+ */
+export function approvalHistory(load: Loaded, usr: string, requests: readonly Listable[]): HistoryRow[] {
+  if (load.gross || !usr) return [];
+
+  // Each card's payout, and the amount that payout recorded for it. A card on
+  // a payout shows that amount, not today's price: it is what was (or will be)
+  // sent, even if the commission rate or the person's role has changed since.
+  const onRequest = new Map<string, { request: Listable; amount: number }>();
+  for (const request of requests) {
+    if (request.status === 'cancelled') continue;
+    for (const item of request.items) {
+      if (!item.conversionId) continue;
+      const seen = onRequest.get(item.conversionId);
+      // A paid request wins over one still waiting, which cannot normally both hold a card.
+      if (!seen || (seen.request.status !== 'paid' && request.status === 'paid')) {
+        onRequest.set(item.conversionId, { request, amount: item.amount });
+      }
+    }
+  }
+
+  const own = load.conversions.filter((row) => row.usr === usr);
+  const views = describeConversions(load.links, own, load.submissions, { gross: false });
+  return views
+    .map((view): HistoryRow => {
+      const found = onRequest.get(view.id);
+      const request = found?.request;
+      const amount = found ? found.amount : view.affiliate;
+      const base = toCardRow({ id: view.id, approvedOn: view.approvedOn, amount, card: view.card, client: view.client });
+      if (request?.status === 'paid') {
+        const paidOn = request.paidAt ? dayOf(request.paidAt) : '';
+        return {
+          ...base,
+          status: 'paid',
+          chip: { label: 'Paid', className: 'chip-live' },
+          when: paidOn ? `Paid ${shortDay(paidOn)}` : 'Paid',
+          href: payslipHref(request.id),
+        };
+      }
+      if (request) {
+        return {
+          ...base,
+          status: 'processing',
+          chip: { label: 'Processing', className: 'chip-gold' },
+          when: 'Payment being processed',
+          href: payslipHref(request.id),
+        };
+      }
+      return {
+        ...base,
+        status: 'unpaid',
+        chip: { label: 'Not paid yet', className: 'chip-quiet' },
+        when: 'In the next monthly payout',
+        href: '',
+      };
+    })
+    .sort((a, b) => (a.approvedOn < b.approvedOn ? 1 : a.approvedOn > b.approvedOn ? -1 : Number(b.id) - Number(a.id)));
+}
+
+/** The line above the history: how much has been paid and how much is waiting. */
+export function describeHistory(rows: readonly HistoryRow[]): string {
+  if (rows.length === 0) return '';
+  const paid = rows.filter((row) => row.status === 'paid');
+  const waiting = rows.filter((row) => row.status !== 'paid');
+  const sum = (list: readonly HistoryRow[]) => formatMoney(list.reduce((total, row) => total + row.amount, 0));
+  const paidText = `${cardCount(paid.length)} paid, ${sum(paid)}`;
+  return waiting.length === 0 ? `${paidText}. Everything has been paid.` : `${paidText}. ${cardCount(waiting.length)} not paid yet, ${sum(waiting)}.`;
+}
+
 /** One request, as the list on /payslips draws it. */
 export type RequestRow = {
   id: string;

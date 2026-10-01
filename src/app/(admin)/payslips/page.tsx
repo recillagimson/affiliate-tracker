@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ErrorPanel } from '@/components/ErrorPanel';
-import { CountingDown, RequestPayment, YourRequests } from '@/components/RequestPayment';
+import { YourRequests } from '@/components/RequestPayment';
+import { formatMoney } from '@/lib/analytics';
+import { totalOf } from '@/lib/payout';
 import { loadAll } from '@/lib/load';
 import { dayOf, PAYOUT_DAYS } from '@/lib/payout';
 import {
@@ -10,7 +12,8 @@ import {
   payoutsEnabled,
   type PayoutRequestRecord,
 } from '@/lib/payout-request-store';
-import { cardsFor, requestRows } from '@/lib/payslip-view';
+import { approvalHistory, cardsFor, requestRows } from '@/lib/payslip-view';
+import { PaymentHistory } from '@/components/PaymentHistory';
 import { listNoShareKeys } from '@/lib/users';
 import { requireViewer } from '@/lib/viewer';
 
@@ -117,8 +120,8 @@ export default async function PayslipsPage() {
       <div className="rise">
         <h1 className="font-display text-[26px] leading-[1.05]">My payslip</h1>
         <p className="plain mt-2.5">
-          Once a card you brought in has been approved for {PAYOUT_DAYS} days, you can ask to be paid
-          for it. Choose the cards below and request payment whenever you are ready.
+          Your commission is paid monthly by ACH. Approved cards that have not been paid yet are
+          totalled below, and every payment we send shows under Your payments with its receipt.
         </p>
       </div>
 
@@ -133,10 +136,14 @@ export default async function PayslipsPage() {
         </div>
       ) : null}
 
+      {/*
+        Payouts are sent monthly by payroll, so there is nothing here to
+        request: just what is waiting to be paid, and the payments already made.
+      */}
       {!load.error && !read.error ? (
         <>
-          <RequestPayment rows={cards.ready} />
-          <CountingDown rows={cards.countingDown} />
+          <UnpaidSummary cards={[...cards.ready, ...cards.countingDown]} />
+          <PaymentHistory rows={approvalHistory(load, viewer.usr, read.requests)} />
         </>
       ) : null}
 
@@ -182,4 +189,22 @@ async function isLgfEmployee(usr: string): Promise<boolean | null> {
     console.error('checking for an LGF employee', caught);
     return null;
   }
+}
+
+/** What is approved and waiting for the next monthly payout. */
+function UnpaidSummary({ cards }: { cards: { amount: number }[] }) {
+  return (
+    <section className="panel mt-5 p-5 sm:p-6">
+      <h2 className="text-[15px] font-semibold">Waiting for the next monthly payout</h2>
+      {cards.length === 0 ? (
+        <p className="plain mt-2">Nothing waiting. Every approved card has been paid.</p>
+      ) : (
+        <p className="mt-2 text-[13px] text-ink-soft">
+          <strong className="tnum text-[18px] text-ink">{formatMoney(totalOf(cards))}</strong>{' '}
+          from {cards.length === 1 ? '1 approved card' : `${cards.length} approved cards`}. You don&rsquo;t need to do
+          anything: it is included in the next monthly payout.
+        </p>
+      )}
+    </section>
+  );
 }

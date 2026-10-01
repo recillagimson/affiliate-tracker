@@ -497,7 +497,7 @@ const rows = requestRows([
   }),
 ]);
 const yours = render(<YourRequests rows={rows} />);
-check('the section is named', yours.includes('>Your requests</h2>'));
+check('the section is named', yours.includes('>Your payments</h2>'));
 check('each request links to its payslip', ['7', '12', '9'].every((id) => yours.includes(`href="/payslips/${id}"`)));
 check('newest first', yours.indexOf('/payslips/12') < yours.indexOf('/payslips/9') && yours.indexOf('/payslips/9') < yours.indexOf('/payslips/7'));
 check('every link says what it opens', (yours.match(/View payslip/g) || []).length === 3);
@@ -511,7 +511,7 @@ check('the day it was requested', yours.includes('Requested 3 Oct 2026'));
 check('and the day it was paid', yours.includes('Paid 8 Oct 2026'));
 check('or cancelled', yours.includes('Cancelled 4 Oct 2026'));
 const noRequests = render(<YourRequests rows={[]} />);
-check('no requests says so', noRequests.includes('requested a payment yet.'));
+check('no payments says so', noRequests.includes('No payments yet.'));
 check('and links nowhere', !noRequests.includes('href='));
 
 console.log('\n- the payslip buttons -');

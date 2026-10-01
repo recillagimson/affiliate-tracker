@@ -195,6 +195,11 @@ export function payslipGate(
   if (action === 'request' && lgfEmployee) {
     return { status: 403, error: 'LGF employees are not paid through payout requests.' };
   }
+  // Payouts are sent monthly by payroll now (the Monthly tab on /payouts), so
+  // nobody files a request. Confirming a payment that arrived stays open.
+  if (action === 'request') {
+    return { status: 403, error: 'Payouts are now sent monthly, so there is nothing to request.' };
+  }
   return null;
 }
 

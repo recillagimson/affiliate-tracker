@@ -202,6 +202,8 @@ export function validateRequestedIds(
   usr: string,
   today: string,
   committed: CommittedIds,
+  /** The monthly payout: payroll may pay a card of any age, so the 15-day wait is skipped. */
+  options: { anyAge?: boolean } = {},
 ): RequestValidation {
   if (requestedIds.length === 0) return refuse('Choose at least one approved card.');
   const unique = new Set(requestedIds);
@@ -220,7 +222,7 @@ export function validateRequestedIds(
     if (!row || !usr || !row.usr || row.usr !== usr) {
       return refuse('One of those approvals is not yours.');
     }
-    if (!isEligible(row.approvedOn, today)) {
+    if (!options.anyAge && !isEligible(row.approvedOn, today)) {
       return refuse(`One of those approvals is not ${PAYOUT_DAYS} days old yet.`);
     }
     if (committed.has(id)) {

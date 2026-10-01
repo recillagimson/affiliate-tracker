@@ -426,16 +426,16 @@ export function YourRequests({ rows }: { rows: RequestRow[] }) {
   return (
     <section className="panel mt-5 overflow-hidden">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-edge bg-paper-card px-5 py-3.5">
-        <h2 className="text-[14px] font-semibold text-ink">Your requests</h2>
+        <h2 className="text-[14px] font-semibold text-ink">Your payments</h2>
         {rows.length > 0 ? <span className="tnum text-[12px] text-ink-dim">{rows.length}</span> : null}
         <p className="w-full text-[12px] text-ink-dim sm:w-auto">
-          Open one for its payslip, the receipt once it is attached, and to confirm the money arrived.
+          Each monthly payout we send, with its payslip and receipt. Open one to confirm the money arrived.
         </p>
       </div>
 
       {rows.length === 0 ? (
         <p className="px-5 py-10 text-center text-[13px] text-ink-soft">
-          You haven&rsquo;t requested a payment yet.
+          No payments yet. Your first one comes with the next monthly payout.
         </p>
       ) : (
         <ul>

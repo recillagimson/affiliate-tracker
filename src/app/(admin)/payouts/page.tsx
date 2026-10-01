@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { LinkPending } from '@/components/LinkPending';
+import { MonthlyPayouts } from '@/components/MonthlyPayouts';
 import { PayoutRequests } from '@/components/PayoutRequests';
 import { PendingApprovals } from '@/components/PendingApprovals';
 import { describeConversions } from '@/lib/analytics';
@@ -9,6 +10,7 @@ import { asAffiliateShare, loadAll } from '@/lib/load';
 import { listOnboarding, readBank } from '@/lib/onboarding-store';
 import { dayOf, PAYOUT_DAYS } from '@/lib/payout';
 import {
+  buildMonthly,
   buildPayees,
   buildPending,
   buildRequestRows,
@@ -112,7 +114,18 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
    * digits, never the number — so opening this page cannot become a way to
    * read everybody's account.
    */
-  const payeeIds = [...new Set(rows.map((row) => row.userId))].filter(Boolean);
+  /*
+   * The Monthly tab: everybody with approvals not yet paid. Built only when
+   * both the approvals and the committed set were read, for the same reason
+   * as Pending: without the committed set, cards already paid would be
+   * offered for payment again.
+   */
+  const userIdByUsr = new Map(people.filter((person) => person.usr).map((person) => [person.usr, person.userId]));
+  const monthly = readError || error ? null : buildMonthly(views, userIdByUsr, byUsr, committed);
+
+  const payeeIds = [
+    ...new Set([...rows.map((row) => row.userId), ...(monthly ?? []).map((row) => row.userId)]),
+  ].filter(Boolean);
   const banks = readError
     ? []
     : (
@@ -142,8 +155,9 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
       <div className="rise">
         <h1 className="font-display text-[26px] leading-[1.05]">Payouts</h1>
         <p className="plain mt-3">
-          Every card is paid on its own clock: {PAYOUT_DAYS} days after it is approved. An affiliate
-          asks to be paid once their cards are ready, which is what shows up here.
+          Affiliates are paid monthly. Monthly lists everybody with approvals not yet paid and what
+          they are owed; open one to pay them. Requests holds every payment made, and older requests
+          affiliates filed before monthly payouts.
         </p>
       </div>
 
@@ -184,6 +198,16 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
           )}
           <LinkPending />
         </Link>
+        <Link
+          href="/payouts?tab=monthly"
+          className="pill-filter relative"
+          data-active={tab === 'monthly'}
+          aria-current={tab === 'monthly' ? 'page' : undefined}
+        >
+          Monthly
+          {monthly === null ? null : <span className="tnum text-[11px]">{monthly.length}</span>}
+          <LinkPending />
+        </Link>
       </nav>
 
       {error ? (
@@ -197,7 +221,11 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
         </div>
       ) : null}
 
-      {tab === 'requests' ? (
+      {tab === 'monthly' ? (
+        monthly ? (
+          <MonthlyPayouts rows={monthly} payees={payees} today={today} />
+        ) : null
+      ) : tab === 'requests' ? (
         readError ? null : (
           <PayoutRequests rows={rows} today={today} payees={payees} status={status} />
         )

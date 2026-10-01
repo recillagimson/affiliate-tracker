@@ -477,6 +477,52 @@ export async function createPayoutRequest(input: {
 }
 
 /**
+ * Pay an affiliate's chosen approvals in one go: the monthly payout.
+ *
+ * create_monthly_payout writes a request that is already paid, with its items
+ * and receipt, in one transaction, so the cards are committed and cannot be
+ * paid twice. Same ownership and double-payment checks as a request, without
+ * the 15-day cutoff. Amounts are the affiliate's share, priced by the caller.
+ */
+export async function createMonthlyPayout(input: {
+  userId: string;
+  usr: string;
+  paidBy: string;
+  items: { conversionId: string; amount: number }[];
+  amount: number;
+  paidOn: string;
+  reference: string;
+  note: string;
+  proof: { name: string; type: string; data: string } | null;
+}): Promise<string> {
+  requireStore();
+  for (const item of input.items) {
+    if (!isRowId(item.conversionId) || !Number.isFinite(item.amount) || item.amount < 0) {
+      throw new StoreValidationError(UNREADABLE);
+    }
+  }
+  const { data, error } = await getSupabaseClient().rpc('create_monthly_payout', {
+    p_user_id: input.userId,
+    p_usr: input.usr,
+    p_paid_by: input.paidBy,
+    p_items: input.items.map((item) => ({ conversion_id: Number(item.conversionId), amount: item.amount })),
+    p_amount: input.amount,
+    p_paid_on: input.paidOn,
+    p_reference: input.reference.trim(),
+    p_note: input.note.trim(),
+    p_proof_name: input.proof?.name ?? '',
+    p_proof_type: input.proof?.type ?? '',
+    p_proof_data: input.proof?.data ?? '',
+  });
+  if (error) fail('recording a monthly payout', error);
+  if (data === null || data === undefined || data === '') {
+    console.error('recording a monthly payout', 'the function returned no id');
+    throw new Error(UNPROCESSED);
+  }
+  return String(data);
+}
+
+/**
  * Cancel an unpaid request and free its cards to be requested again.
  *
  * A paid request is refused (LG006): clear the payment first. Both halves,
