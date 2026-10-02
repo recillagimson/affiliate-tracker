@@ -3,7 +3,7 @@ import type { Message } from '../email';
 /**
  * "Your account is approved."
  *
- * One place for the wording, because this is the only message the app sends and
+ * One place for the wording, because this is the first message the app sends and
  * it is the first thing an affiliate reads from us that is not a form. Both
  * parts are built together so the text version cannot drift into being an
  * afterthought: plenty of people, and every screen reader, get the text one.
@@ -46,8 +46,8 @@ export function accountApprovedEmail(input: {
     'Sign in here:',
     signIn,
     '',
-    'Your tracking link is on the Links page. Payment is by ACH, fifteen days',
-    'after a referral is approved, to the account you gave us.',
+    'Your tracking link is on the Links page. Commission is paid monthly by ACH',
+    'to the account you gave us.',
     ...(note ? ['', 'A note from the team:', note] : []),
     '',
     'If anything looks wrong, reply to this message and we will sort it out.',
@@ -77,8 +77,8 @@ export function accountApprovedEmail(input: {
         </a>
       </p>
       <p style="margin:20px 0 0;font-size:13px;line-height:1.6;color:#33475b;">
-        Your tracking link is on the Links page. Payment is by ACH, fifteen days after a
-        referral is approved, to the account you gave us.
+        Your tracking link is on the Links page. Commission is paid monthly by ACH to the
+        account you gave us.
       </p>
       ${
         note

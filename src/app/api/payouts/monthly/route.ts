@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { requireApiAdmin } from '@/lib/api-auth';
+import { describeConversions } from '@/lib/analytics';
+import { configuredBaseUrl } from '@/lib/config';
+import { EmailError, sendEmail } from '@/lib/email';
+import { payoutSentEmail } from '@/lib/emails/payout-sent';
 import { asAffiliateShare, loadAll } from '@/lib/load';
 import { dayOf, totalOf } from '@/lib/payout';
 import { asBody, readConversionIds, readPayment, storeFailure, type Refusal } from '@/lib/payout-api';
@@ -7,6 +11,8 @@ import { validateRequestedIds } from '@/lib/payout-request';
 import { createMonthlyPayout, listCommittedConversionIds } from '@/lib/payout-request-store';
 import { checkReceiptUpload } from '@/lib/receipt-file';
 import { StoreConflictError } from '@/lib/store/errors';
+import { originFromHeaders } from '@/lib/request';
+import { payslipHref } from '@/lib/payslip-view';
 import { findUserById } from '@/lib/users';
 
 /**
@@ -92,7 +98,29 @@ export async function POST(request: Request) {
       note: payment.payment.note,
       proof,
     });
-    return NextResponse.json({ ok: true, requestId, amount: payment.payment.amount }, { status: 201 });
+    // Tell the affiliate. Never fails the payout: the money is recorded either
+    // way, and payroll is shown why no email went.
+    const emailed = await emailAffiliate({
+      to: account.email,
+      name: account.fullName || account.username,
+      origin: originFromHeaders(request.headers, configuredBaseUrl()),
+      amount: payment.payment.amount,
+      paidOn: payment.payment.paidOn,
+      reference: payment.payment.reference,
+      cards: describeConversions(
+        load.links,
+        owed.filter((row) => result.items.some((item) => item.conversionId === row.id)),
+        load.submissions,
+        { gross: false },
+      ).map((view) => ({ card: view.card || 'Card', customer: view.client || 'Customer', approvedOn: dayOf(view.approvedOn), amount: view.affiliate })),
+      payslipPath: payslipHref(requestId),
+      hasReceipt: proof !== null,
+    });
+
+    return NextResponse.json(
+      { ok: true, requestId, amount: payment.payment.amount, ...emailed },
+      { status: 201 },
+    );
   } catch (error) {
     // Somebody else paid one of these cards between the page loading and Save.
     const refusal: Refusal =
@@ -105,5 +133,19 @@ export async function POST(request: Request) {
         : storeFailure(error, 'That payout did not save.', { showUnknown: true });
     if (refusal.status >= 500) console.error('monthly payout', error);
     return refuse(refusal);
+  }
+}
+
+async function emailAffiliate(
+  input: Omit<Parameters<typeof payoutSentEmail>[0], 'to'> & { to: string },
+): Promise<{ emailed: boolean; emailProblem?: string }> {
+  if (!input.to.trim()) return { emailed: false, emailProblem: 'They have no email address on file, so no email was sent.' };
+  try {
+    await sendEmail(payoutSentEmail(input));
+    return { emailed: true };
+  } catch (error) {
+    const why = error instanceof EmailError || error instanceof Error ? error.message : 'The email could not be sent.';
+    if (!(error instanceof EmailError && error.unconfigured)) console.error('monthly payout: email', error);
+    return { emailed: false, emailProblem: why };
   }
 }

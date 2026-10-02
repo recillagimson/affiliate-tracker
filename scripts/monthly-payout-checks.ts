@@ -11,6 +11,7 @@ import { buildMonthly, describeMonthly, tabFrom } from '../src/lib/payout-admin'
 import { validateRequestedIds } from '../src/lib/payout-request';
 import { payslipGate } from '../src/lib/payout-api';
 import { approvalHistory, describeHistory } from '../src/lib/payslip-view';
+import { payoutSentEmail } from '../src/lib/emails/payout-sent';
 
 let pass = 0;
 let fail = 0;
@@ -106,6 +107,27 @@ check('a paid card shows what was paid, not today\u2019s price', history.find((r
 check('an unpaid card shows today\u2019s price', history.find((r) => r.id === '4')!.amount === 20);
 check('the summary', describeHistory(history) === '1 card paid, $135. 3 cards not paid yet, $50.', describeHistory(history));
 check("somebody else's cards are not listed", approvalHistory(load, 'ben', []).length === 0);
+
+console.log('\n— the paid email —');
+const mail = payoutSentEmail({
+  to: 'dan@example.com', name: 'Dan Ollman', origin: 'https://affiliate.launchstone.com/', amount: 1305.5, paidOn: '2026-10-02',
+  reference: 'ACH-4471', payslipPath: '/payslips/12', hasReceipt: true,
+  cards: [{ card: 'Best Cards', customer: 'J. Smith', approvedOn: '2026-09-02', amount: 1305.5 }],
+});
+check('it goes to the affiliate', mail.to === 'dan@example.com');
+check('the subject says how much', mail.subject === "You've been paid $1,305.50: LaunchStone affiliate commission", mail.subject);
+check('it greets them by first name', mail.text.startsWith('Hi Dan,'));
+check('it says when, and the reference', mail.text.includes('on 2 Oct 2026') && mail.text.includes('Reference: ACH-4471'));
+check('it lists the approvals it covers', mail.text.includes('Best Cards, J. Smith, approved 2 Sep 2026: $1,305.50'));
+check('it links to the payslip', mail.text.includes('https://affiliate.launchstone.com/payslips/12') && mail.html!.includes('href="https://affiliate.launchstone.com/payslips/12"'));
+check('it mentions the receipt when there is one', mail.html!.includes('View payslip and receipt'));
+check('no em dashes anywhere', !/[\u2013\u2014]/.test(mail.text + mail.html + mail.subject));
+const bare = payoutSentEmail({ to: 'x@example.com', name: '', origin: 'https://a.example', amount: 90, paidOn: '2026-10-02', reference: '', payslipPath: '/payslips/1', hasReceipt: false, cards: [] });
+check('no reference line when there is none', !bare.text.includes('Reference:'));
+check('no receipt promised when there is none', !bare.html!.includes('receipt'));
+check('a whole amount has no cents', bare.subject.includes('$90:'));
+const escaped = payoutSentEmail({ to: 'x@example.com', name: 'A', origin: 'https://a.example', amount: 1, paidOn: '2026-10-02', reference: '<b>x</b>', payslipPath: '/payslips/1', hasReceipt: false, cards: [] });
+check('what payroll typed is escaped in the HTML', !escaped.html!.includes('<b>x</b>') && escaped.html!.includes('&lt;b&gt;'));
 
 console.log(`\nmonthly-payout: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

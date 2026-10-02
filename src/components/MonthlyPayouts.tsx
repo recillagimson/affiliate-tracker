@@ -106,7 +106,12 @@ export function MonthlyPayouts({
         setProblems((payload.fields ?? {}) as Record<string, string>);
         throw new Error(payload.hint ? `${payload.error} ${payload.hint}` : payload.error ?? `That did not save (${res.status}).`);
       }
-      setSaved(`Paid ${open.name} ${formatMoney(selectedTotal)} for ${describeCardCount(selected.length)}.`);
+      const told = payload.emailed
+        ? ' They have been emailed.'
+        : payload.emailProblem
+          ? ` No email went: ${payload.emailProblem}`
+          : '';
+      setSaved(`Paid ${open.name} ${formatMoney(selectedTotal)} for ${describeCardCount(selected.length)}.${told}`);
       setOpenUsr('');
       startTransition(() => router.refresh());
     } catch (caught) {

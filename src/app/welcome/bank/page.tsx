@@ -50,8 +50,7 @@ export default async function BankPage() {
         </p>
         <h1 className="mt-1.5 font-display text-[26px] leading-[1.15]">Where the money goes</h1>
         <p className="plain mt-2.5">
-          Payment is by ACH, fifteen days after a referral is approved. This is the account it
-          lands in.
+          Commission is paid monthly by ACH. This is the account it lands in.
         </p>
       </div>
 
