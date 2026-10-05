@@ -151,7 +151,7 @@ export default async function CpaPage() {
             )}
           </div>
         ) : (
-          <CpaBrowser rows={rows} gross={isAdmin} />
+          <CpaBrowser rows={rows} gross={isAdmin} inactive={settings.inactiveCards} />
         )}
       </section>
     </div>

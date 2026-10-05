@@ -48,6 +48,12 @@ export type Settings = {
    * Null means list everything.
    */
   cpaFloor: number | null;
+  /**
+   * Cards an admin has marked Inactive on the rate card, as `issuer|card`
+   * (lib/cpa-groups groupRates' key). Kept here rather than on the rate rows
+   * because an upload replaces those whole, and the mark has to outlive it.
+   */
+  inactiveCards: string[];
   updatedAt: string;
   updatedBy: string;
 };
@@ -56,6 +62,7 @@ export function defaultSettings(): Settings {
   return {
     shares: [{ from: '', rate: DEFAULT_SHARE }],
     cpaFloor: null,
+    inactiveCards: [],
     updatedAt: '',
     updatedBy: '',
   };
@@ -208,6 +215,9 @@ export function parseSettings(raw: unknown): Settings {
   return {
     shares: normaliseShares(shares),
     cpaFloor: floorFrom(value.cpaFloor as string | number | null | undefined),
+    inactiveCards: Array.isArray(value.inactiveCards)
+      ? [...new Set(value.inactiveCards.filter((key): key is string => typeof key === 'string' && key.includes('|')))]
+      : [],
     updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : '',
     updatedBy: typeof value.updatedBy === 'string' ? value.updatedBy : '',
   };
@@ -262,4 +272,20 @@ export function approvalsAffected(
     if (!earliest || entry.day < earliest) earliest = entry.day;
   }
   return { count, earliest };
+}
+
+/* ------------------------------------------------------- inactive cards --- */
+
+/** Longer than any `issuer|card` the rate card has held, short enough to refuse junk. */
+const MAX_CARD_KEY = 300;
+
+/** A card key worth storing: `issuer|card` with a card name after the bar. */
+export function isCardKey(key: unknown): key is string {
+  return typeof key === 'string' && key.length <= MAX_CARD_KEY && key.indexOf('|') >= 0 && key.split('|').slice(1).join('|').trim() !== '';
+}
+
+/** The list with one card marked inactive or active again. Order kept, no duplicates. */
+export function withCardStatus(inactiveCards: string[], key: string, inactive: boolean): string[] {
+  const rest = inactiveCards.filter((entry) => entry !== key);
+  return inactive ? [...rest, key] : rest;
 }

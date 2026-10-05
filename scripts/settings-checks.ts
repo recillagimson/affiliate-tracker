@@ -22,6 +22,8 @@ import {
   shareOn,
   shareProblems,
   type ShareRate,
+  isCardKey,
+  withCardStatus,
 } from '../src/lib/settings';
 
 let pass = 0;
@@ -148,6 +150,18 @@ check('in order', stored.shares[0]!.from === '' && stored.shares[1]!.from === '2
 check('with who set it and when', stored.updatedBy === 'arthur' && stored.updatedAt.startsWith('2026-08-27'));
 check('a blob with a broken rate still loads', parseSettings({ shares: [{ from: '', rate: 'half' }] }).shares[0]!.rate === DEFAULT_SHARE);
 check('and one with a broken floor', parseSettings({ cpaFloor: 'two hundred' }).cpaFloor === null);
+
+console.log('\n— inactive cards —');
+check('nothing is inactive by default', defaultSettings().inactiveCards.length === 0);
+check('saved marks are read back', parseSettings({ inactiveCards: ['Chase|Ink', 'Amex|Gold'] }).inactiveCards.join() === 'Chase|Ink,Amex|Gold');
+check('junk in the list is dropped', parseSettings({ inactiveCards: ['Chase|Ink', 7, null, 'nobar', 'Chase|Ink'] }).inactiveCards.join() === 'Chase|Ink');
+check('a list that is not a list is none', parseSettings({ inactiveCards: 'Chase|Ink' }).inactiveCards.length === 0);
+check('marking a card inactive adds it', withCardStatus(['Amex|Gold'], 'Chase|Ink', true).join() === 'Amex|Gold,Chase|Ink');
+check('marking it twice does not double it', withCardStatus(['Chase|Ink'], 'Chase|Ink', true).join() === 'Chase|Ink');
+check('marking it active removes it', withCardStatus(['Amex|Gold', 'Chase|Ink'], 'Chase|Ink', false).join() === 'Amex|Gold');
+check('marking an active card active changes nothing', withCardStatus(['Amex|Gold'], 'Chase|Ink', false).join() === 'Amex|Gold');
+check('a card key needs a card', isCardKey('Chase|Ink') && isCardKey('|House card') && !isCardKey('Chase|') && !isCardKey('Chase') && !isCardKey(7));
+check('an absurdly long key is refused', !isCardKey(`Chase|${'x'.repeat(400)}`));
 check('a rate history is not lost by a round trip', JSON.stringify(parseSettings(JSON.parse(JSON.stringify(stored))).shares) === JSON.stringify(stored.shares));
 
 console.log('\n— what the form refuses —');

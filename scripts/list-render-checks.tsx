@@ -482,6 +482,18 @@ console.log('\n— the rate card, as an affiliate reads it —');
  * hidden from anybody who can open dev tools.
  */
 const ownCard = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(rates, false)} gross={false} />);
+{
+  const firstKey = `${rates[0]!.issuer}|${rates[0]!.card}`;
+  const adminMarked = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(rates, true)} gross inactive={[firstKey]} />);
+  const ownMarked = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(rates, false)} gross={false} inactive={[firstKey]} />);
+  check('the rate card has a Status column', card.includes('>Status<'));
+  check('every card is Active until marked', card.includes('>Active<') && !card.includes('>Inactive<'));
+  check('a marked card reads Inactive', adminMarked.includes('>Inactive<'));
+  check('an admin can mark a card inactive', card.includes('Mark inactive'));
+  check('and mark it active again', adminMarked.includes('Mark active'));
+  check('an affiliate sees the mark', ownMarked.includes('>Inactive<'));
+  check('but has no button to change it', !ownMarked.includes('Mark active') && !ownMarked.includes('Mark inactive'));
+}
 check('there is no Pays now column', !ownCard.includes('Pays now'));
 check('no Paid before column', !ownCard.includes('Paid before'));
 // The quote at the end is load-bearing: 'Sort by Change' is a prefix of

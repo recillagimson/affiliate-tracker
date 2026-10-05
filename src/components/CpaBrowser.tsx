@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Pager } from '@/components/Pager';
 import { SortHeader, nextSort, type SortState } from '@/components/SortHeader';
 import { TableScroller } from '@/components/TableScroller';
@@ -44,7 +44,53 @@ import { PAGE_SIZES, pageSlice } from '@/lib/paging';
  * with different numbers in it.
  */
 
-export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolean }) {
+export function CpaBrowser({
+  rows,
+  gross,
+  inactive = [],
+}: {
+  rows: CpaRateView[];
+  gross: boolean;
+  /** Cards an admin has marked Inactive, as `issuer|card`. Everybody sees the mark; only an admin (gross) can change it. */
+  inactive?: string[];
+}) {
+  /*
+   * The marks as this page shows them: the server's, plus any change made
+   * here. No router refresh after a save: the chip is already right, the
+   * server has it for the next load, and going without a router is what lets
+   * the render checks draw this table. Reset if the server's list changes.
+   */
+  const [marked, setMarked] = useState<ReadonlySet<string>>(() => new Set(inactive));
+  const inactiveKey = inactive.join('\n');
+  useEffect(() => setMarked(new Set(inactive)), [inactiveKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [savingCard, setSavingCard] = useState('');
+  const [statusError, setStatusError] = useState('');
+
+  async function setStatus(key: string, makeInactive: boolean) {
+    if (savingCard) return;
+    setSavingCard(key);
+    setStatusError('');
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'card-status', card: key, inactive: makeInactive }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error ?? `That did not save (${res.status}).`);
+      setMarked((current) => {
+        const next = new Set(current);
+        if (makeInactive) next.add(key);
+        else next.delete(key);
+        return next;
+      });
+    } catch (caught) {
+      setStatusError(caught instanceof Error ? caught.message : 'That did not save.');
+    } finally {
+      setSavingCard('');
+    }
+  }
+
   const [filter, setFilter] = useState<CpaFilter>({
     query: '',
     issuer: '',
@@ -242,7 +288,13 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
               : 'Nothing matches.'}
         </p>
       ) : (
-        <TableScroller className="mt-5" label="Card rates">
+        <>
+          {statusError ? (
+            <p role="alert" className="field-error mt-4 block text-[13px]">
+              {statusError}
+            </p>
+          ) : null}
+          <TableScroller className="mt-5" label="Card rates">
           <table
             className={`w-full border-collapse text-left ${
               gross ? 'min-w-[1040px]' : 'min-w-[720px]'
@@ -260,6 +312,11 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
                     right={column.right}
                   />
                 ))}
+                {/* Not sortable: it is a mark, not a figure, and the filter is
+                    the way to find the inactive ones. */}
+                <th scope="col" className="whitespace-nowrap p-0 pb-3">
+                  <span className="label-cap block px-3 py-1 text-left">Status</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -278,6 +335,10 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
                  * changing shade as you page through.
                  */
                 const band = index % 2 === 1 ? 'bg-paper-sunk' : '';
+                const isInactive = marked.has(group.key);
+                // Greyed, not hidden: an affiliate should see that the card
+                // exists and is not to be offered, rather than wonder where it went.
+                const dim = isInactive ? 'opacity-55' : '';
 
                 return (
                   <Fragment key={group.key}>
@@ -289,10 +350,10 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
                         group.tiered ? 'border-t-2 border-edge-faint' : 'divider-row'
                       } ${band}`}
                     >
-                      <td className="max-w-[200px] truncate px-3 py-3 text-[12px] text-ink-soft">
+                      <td className={`max-w-[200px] truncate px-3 py-3 text-[12px] text-ink-soft ${dim}`}>
                         {group.issuer || BLANK}
                       </td>
-                      <td className="max-w-[380px] px-3 py-3 text-[13px] font-semibold">
+                      <td className={`max-w-[380px] px-3 py-3 text-[13px] font-semibold ${dim}`}>
                         {group.card}
                       </td>
                       <td className="px-3 py-3 text-[12px]">
@@ -321,13 +382,32 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
                       {gross ? <Money value={single ? single.previous : null} /> : null}
                       {gross ? <Change value={single ? single.change : null} /> : null}
                       <Changed value={single ? single.changedOn : ''} />
+                      <td className="whitespace-nowrap px-3 py-3 text-[12px]">
+                        <span className="flex items-center gap-2">
+                          <span className={`chip ${isInactive ? 'chip-quiet' : 'chip-live'}`}>
+                            {isInactive ? 'Inactive' : 'Active'}
+                          </span>
+                          {gross ? (
+                            <button
+                              type="button"
+                              className="btn-quiet btn-sm"
+                              disabled={savingCard !== ''}
+                              aria-busy={savingCard === group.key}
+                              onClick={() => void setStatus(group.key, !isInactive)}
+                            >
+                              {savingCard === group.key ? 'Saving…' : isInactive ? 'Mark active' : 'Mark inactive'}
+                              <span className="sr-only">: {group.card}</span>
+                            </button>
+                          ) : null}
+                        </span>
+                      </td>
                     </tr>
 
                     {group.tiered && open
                       ? tiersOf(group, sort).map((rate, tierIndex) => (
                           <tr
                             key={`${group.key}:${rate.tier}:${tierIndex}`}
-                            className={`divider-row ${band}`}
+                            className={`divider-row ${band} ${dim}`}
                           >
                             {/* Blank on purpose: the issuer and the card are on
                                 the row above, and repeating them down every
@@ -350,6 +430,7 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
                             {gross ? <Money value={rate.previous} /> : null}
                             {gross ? <Change value={rate.change} /> : null}
                             <Changed value={rate.changedOn} />
+                            <td />
                           </tr>
                         ))
                       : null}
@@ -358,7 +439,8 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
               })}
             </tbody>
           </table>
-        </TableScroller>
+          </TableScroller>
+        </>
       )}
 
       <Pager

@@ -4,9 +4,11 @@ import {
   DEFAULT_SHARE,
   defaultSettings,
   floorFrom,
+  isCardKey,
   normaliseShares,
   rateFromPercent,
   shareProblems,
+  withCardStatus,
   type Settings,
 } from '@/lib/settings';
 import { getStore, statusForError } from '@/lib/store';
@@ -97,9 +99,15 @@ export async function POST(request: Request) {
     next = { ...current, shares: normaliseShares(current.shares.filter((entry) => entry.from !== from)) };
   } else if (action === 'floor') {
     next = { ...current, cpaFloor: floorFrom(body.floor as string | number | null) };
+  } else if (action === 'card-status') {
+    // Marking one card on the rate card Inactive, or active again.
+    if (!isCardKey(body.card)) {
+      return NextResponse.json({ error: 'Which card?' }, { status: 422 });
+    }
+    next = { ...current, inactiveCards: withCardStatus(current.inactiveCards, body.card, body.inactive === true) };
   } else {
     return NextResponse.json(
-      { error: 'No such setting.', hint: 'Expected add-share, remove-share or floor.' },
+      { error: 'No such setting.', hint: 'Expected add-share, remove-share, floor or card-status.' },
       { status: 400 },
     );
   }
