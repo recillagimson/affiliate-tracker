@@ -31,10 +31,10 @@ function first(value: string | string[] | undefined): string | undefined {
 }
 
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
   { key: 'open', label: 'Open' },
   { key: 'resolved', label: 'Resolved' },
   { key: 'closed', label: 'Closed' },
-  { key: 'all', label: 'All' },
 ];
 
 /**
@@ -42,8 +42,8 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
  *
  * The same page for both sides, deciding which from the session. An affiliate
  * sees their own tickets, newest activity first, and a button to open one. An
- * admin sees everybody's, opening on the open ones because those are the work,
- * with filters in the URL so a filtered view can be linked to and survives a
+ * admin sees everybody's, every status at once by default, with filters in
+ * the URL so a filtered view can be linked to and survives a
  * reload.
  *
  * An admin in Client View is the affiliate here, as everywhere else, and sees

@@ -264,10 +264,10 @@ export function buildSupportRows(
 
 export type StatusFilter = SupportStatus | 'all';
 
-/** Open unless the URL says otherwise: the open ones are the work. */
+/** Everything unless the URL says otherwise, so no ticket is ever out of sight on arrival. */
 export function statusFilterFrom(value: unknown): StatusFilter {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return text === 'resolved' || text === 'closed' || text === 'all' ? text : 'open';
+  return text === 'open' || text === 'resolved' || text === 'closed' ? text : 'all';
 }
 
 export function categoryFilterFrom(value: unknown): SupportCategory | '' {
@@ -281,7 +281,7 @@ export function supportHref(filter: {
   unread: boolean;
 }): string {
   const params: string[] = [];
-  if (filter.status !== 'open') params.push(`status=${filter.status}`);
+  if (filter.status !== 'all') params.push(`status=${filter.status}`);
   if (filter.category) params.push(`category=${filter.category}`);
   if (filter.unread) params.push('unread=1');
   return params.length === 0 ? '/support' : `/support?${params.join('&')}`;

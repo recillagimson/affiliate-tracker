@@ -156,14 +156,16 @@ check('every category has a label', SUPPORT_CATEGORIES.every((c) => CATEGORY_LAB
 check('a category is recognised', isSupportCategory('bug') && !isSupportCategory('Bug') && !isSupportCategory(3));
 
 console.log('- filters -');
-check('open by default', statusFilterFrom(undefined) === 'open');
+check('everything by default', statusFilterFrom(undefined) === 'all');
+check('open when asked', statusFilterFrom('open') === 'open');
 check('closed when asked', statusFilterFrom(' Closed ') === 'closed');
 check('all when asked', statusFilterFrom('all') === 'all');
 check('resolved when asked', statusFilterFrom('resolved') === 'resolved');
-check('nonsense falls back to open', statusFilterFrom('x') === 'open');
+check('nonsense falls back to everything', statusFilterFrom('x') === 'all');
 check('a category from the URL', categoryFilterFrom('bug') === 'bug');
 check('nonsense is no category', categoryFilterFrom('x') === '' && categoryFilterFrom(undefined) === '');
-check('the default view is the bare path', supportHref({ status: 'open', category: '', unread: false }) === '/support');
+check('the default view is the bare path', supportHref({ status: 'all', category: '', unread: false }) === '/support');
+check('open is spelled out now that it is not the default', supportHref({ status: 'open', category: '', unread: false }) === '/support?status=open');
 check(
   'everything else is spelled out',
   supportHref({ status: 'closed', category: 'bug', unread: true }) === '/support?status=closed&category=bug&unread=1',
