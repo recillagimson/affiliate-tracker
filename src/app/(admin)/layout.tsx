@@ -10,6 +10,9 @@ import { storageStatus, type StorageStatus } from '@/lib/store';
 import { isBypassed } from '@/lib/approval';
 import { stepsFor } from '@/lib/onboarding';
 import { requireOnboarded } from '@/lib/onboarding-guard';
+import { sideFor } from '@/lib/support';
+import { countUnreadSupport, supportEnabled } from '@/lib/support-store';
+import type { Viewer } from '@/lib/viewer-core';
 // import { currentAnnouncement } from '@/lib/updates';
 // import { loginStamp } from '@/lib/viewer';
 
@@ -31,6 +34,25 @@ const STORAGE: Partial<Record<StorageStatus, Badge>> = {
   unconfigured: { text: 'Storage not set up', tone: 'warn' },
 };
 
+/**
+ * How many support tickets have something this viewer has not read, for the
+ * tab's badge.
+ *
+ * Zero on any failure. This runs in the layout, in front of every page in the
+ * app, and a badge is not worth a page: a database without the support tables
+ * yet, or one that is briefly unreachable, must leave every other screen
+ * exactly as it was.
+ */
+async function supportUnreadFor(viewer: Pick<Viewer, 'role' | 'id'>): Promise<number> {
+  if (!supportEnabled()) return 0;
+  try {
+    return await countUnreadSupport(sideFor(viewer), viewer.id);
+  } catch (error) {
+    console.error('counting unread support tickets', error);
+    return 0;
+  }
+}
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Undefined on a healthy deployment, which is the point.
   const badge = STORAGE[storageStatus()];
@@ -44,6 +66,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // any page inside.
   const { viewer, state, applies, bypass } = await requireOnboarded();
   const isAdmin = viewer.role === 'admin';
+  const supportUnread = await supportUnreadFor(viewer);
   // The one step that nags instead of barring. §2 of the agreement makes a
   // payment impossible without it, so it is worth a standing line — but there
   // are two weeks of Net-15 slack to produce it in, so it is not worth a wall.
@@ -126,7 +149,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
 
         <div className="border-b border-edge bg-panel px-5 sm:px-7">
-          <Nav isAdmin={isAdmin} />
+          <Nav isAdmin={isAdmin} supportUnread={supportUnread} />
         </div>
       </header>
 
@@ -170,7 +193,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       {/* {announcement ? <UpdateNotice update={announcement} login={login} /> : null} */}
 
       <div className="no-print">
-        <MobileTabs isAdmin={isAdmin} />
+        <MobileTabs isAdmin={isAdmin} supportUnread={supportUnread} />
       </div>
     </div>
   );

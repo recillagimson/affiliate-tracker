@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { badgeText } from '@/lib/support';
 
 type Item = { href: string; label: string; adminOnly?: boolean; affiliateOnly?: boolean };
 
@@ -16,6 +17,10 @@ const ITEMS: Item[] = [
   // as an admin does, and none of it is anybody's personal data. Only the
   // upload on that page is admin-only, and the route enforces that itself.
   { href: '/cpa', label: 'Cards' },
+  // Everyone, and the same page for both: an affiliate sees their own tickets
+  // and an admin sees all of them. The page and the route decide which, from
+  // the session.
+  { href: '/support', label: 'Support' },
   { href: '/reports', label: 'Reports', adminOnly: true },
   { href: '/users', label: 'People', adminOnly: true },
   // Who is owed what, and by when. Admin-only: it is everybody's money on one
@@ -47,6 +52,7 @@ function isActive(href: string, pathname: string): boolean {
   if (href === '/') return pathname === '/' || pathname.startsWith('/affiliate');
   if (href === '/links') return pathname === '/links';
   if (href === '/cpa') return pathname.startsWith('/cpa');
+  if (href === '/support') return pathname.startsWith('/support');
   if (href === '/reports') return pathname.startsWith('/reports');
   if (href === '/users') return pathname.startsWith('/users');
   if (href === '/payouts') return pathname.startsWith('/payouts');
@@ -57,13 +63,34 @@ function isActive(href: string, pathname: string): boolean {
 }
 
 /**
+ * How many support tickets have something this viewer has not read.
+ *
+ * Nothing at all for zero: a badge that is always there stops being a signal.
+ * The number is repeated in words for a screen reader, which would otherwise
+ * announce a bare "3" after the tab's name.
+ */
+function SupportBadge({ count }: { count: number }) {
+  const text = badgeText(count);
+  if (!text) return null;
+  return (
+    <span
+      data-support-unread={count}
+      className="ml-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-semibold leading-[18px] text-ink"
+    >
+      {text}
+      <span className="sr-only"> {count} unread</span>
+    </span>
+  );
+}
+
+/**
  * The header tabs. Hidden on phones, where the bar at the bottom takes over.
  *
  * No gap between them: these are underline tabs, and the underline has to run
  * the width of the label it belongs to with nothing between it and the next
  * one, or the row reads as a set of separate buttons again.
  */
-export function Nav({ isAdmin }: { isAdmin: boolean }) {
+export function Nav({ isAdmin, supportUnread = 0 }: { isAdmin: boolean; supportUnread?: number }) {
   const pathname = usePathname();
 
   return (
@@ -76,6 +103,7 @@ export function Nav({ isAdmin }: { isAdmin: boolean }) {
           className="pill-tab"
         >
           {item.label}
+          {item.href === '/support' ? <SupportBadge count={supportUnread} /> : null}
         </Link>
       ))}
     </nav>
@@ -87,7 +115,7 @@ export function Nav({ isAdmin }: { isAdmin: boolean }) {
  * the thumb is. Full-width targets, 17px labels, and a thick bar over the
  * active one so "where am I" survives being read at arm's length.
  */
-export function MobileTabs({ isAdmin }: { isAdmin: boolean }) {
+export function MobileTabs({ isAdmin, supportUnread = 0 }: { isAdmin: boolean; supportUnread?: number }) {
   const pathname = usePathname();
 
   return (
@@ -113,6 +141,7 @@ export function MobileTabs({ isAdmin }: { isAdmin: boolean }) {
                 className={`text-[12px] ${active ? 'font-semibold text-ink' : 'text-ink-dim'}`}
               >
                 {item.label}
+                {item.href === '/support' ? <SupportBadge count={supportUnread} /> : null}
               </span>
             </Link>
           );
