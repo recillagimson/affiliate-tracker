@@ -190,6 +190,13 @@ export const config = {
     '/api/payouts/:path*',
     '/api/payslips',
     '/api/payslips/:path*',
+    // Support tickets. A conversation between one affiliate and the admins,
+    // with screenshots, so a signed-out request must not reach the pages, the
+    // route behind them or the image route, even to be told no.
+    '/support',
+    '/support/:path*',
+    '/api/support',
+    '/api/support/:path*',
     // Settings. A campaign decides where a link sends people, so the page and
     // the route behind it are gated like account administration is.
     '/settings',
