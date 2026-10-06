@@ -2,9 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
+import { AttachmentPicker } from '@/components/AttachmentPicker';
 import { formatDateTime } from '@/lib/analytics';
-import { MAX_BODY, SUPPORT_IMAGE_TYPES, type SupportMessage, type SupportSide, type SupportStatus } from '@/lib/support';
-import { emailNote, postSupport, readImages } from '@/lib/support-client';
+import { fileKind, MAX_BODY, sizeText, type SupportMessage, type SupportSide, type SupportStatus } from '@/lib/support';
+import { addPicked, checkPicked, emailNote, filesFrom, postSupport, uploadFiles } from '@/lib/support-client';
 
 /**
  * The messages of a ticket, oldest first. No state, so every shape it can
@@ -38,26 +39,56 @@ export function SupportMessages({ messages, side }: { messages: SupportMessage[]
             </p>
             <p className="mt-2 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-ink">{message.body}</p>
             {message.attachments.length > 0 ? (
-              <ul className="mt-3 flex flex-wrap gap-2">
-                {message.attachments.map((file) => (
-                  <li key={file.id}>
-                    <a
-                      href={`/api/support/attachments/${file.id}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block border border-edge"
-                    >
-                      {/* A plain img: these are served from this app's own
-                          signed-in route, which next/image cannot fetch. */}
-                      <img
-                        src={`/api/support/attachments/${file.id}`}
-                        alt={file.name}
-                        loading="lazy"
-                        className="h-24 w-24 object-cover"
-                      />
-                    </a>
-                  </li>
-                ))}
+              <ul className="mt-3 flex flex-wrap items-start gap-2">
+                {message.attachments.map((file) => {
+                  const href = `/api/support/attachments/${file.id}`;
+                  const kind = fileKind(file.type);
+                  if (kind === 'image') {
+                    return (
+                      <li key={file.id}>
+                        <a href={href} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-[6px] border border-edge">
+                          {/* A plain img: these come through this app's own
+                              signed-in route, which next/image cannot fetch. */}
+                          <img src={href} alt={file.name} loading="lazy" className="h-28 w-28 object-cover" />
+                        </a>
+                      </li>
+                    );
+                  }
+                  if (kind === 'video') {
+                    return (
+                      <li key={file.id} className="w-full max-w-[420px]">
+                        {/* metadata only, so a thread with five recordings
+                            does not start five downloads on open. */}
+                        <video
+                          controls
+                          preload="metadata"
+                          src={href}
+                          aria-label={file.name}
+                          className="w-full rounded-[6px] border border-edge bg-ink"
+                        />
+                        <span className="mt-1 block truncate text-[12px] text-ink-soft">
+                          {file.name} · {sizeText(file.size)}
+                        </span>
+                      </li>
+                    );
+                  }
+                  return (
+                    <li key={file.id}>
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-2 rounded-[6px] border border-edge bg-panel px-3 py-2 text-[13px]"
+                      >
+                        <span aria-hidden className="rounded-[4px] bg-navy-wash px-1.5 py-0.5 text-[10px] font-semibold uppercase text-navy">
+                          PDF
+                        </span>
+                        <span className="link-text font-medium">{file.name}</span>
+                        <span className="text-[12px] text-ink-soft">{sizeText(file.size)}</span>
+                      </a>
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
           </li>
@@ -93,7 +124,7 @@ export function SupportThread({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
-  const picker = useRef<HTMLInputElement | null>(null);
+  const [progress, setProgress] = useState<number[]>([]);
   const marked = useRef(false);
 
   useEffect(() => {
@@ -111,16 +142,22 @@ export function SupportThread({
     setError('');
     setSaved('');
     try {
-      const images = await readImages(files);
-      if (!images.ok) {
-        setError(images.error);
+      const uploaded = await uploadFiles(files, (index, percent) =>
+        setProgress((current) => {
+          const next = [...current];
+          next[index] = percent;
+          return next;
+        }),
+      );
+      if (!uploaded.ok) {
+        setError(uploaded.error);
         return;
       }
       const result = await postSupport({
         action: 'reply',
         ticketId: ticket.id,
         body,
-        attachments: images.attachments,
+        attachments: uploaded.attachments,
       });
       if (!result.ok) {
         setError(result.error);
@@ -128,11 +165,11 @@ export function SupportThread({
       }
       setBody('');
       setFiles([]);
-      if (picker.current) picker.current.value = '';
       setSaved(`Sent.${emailNote(result.payload)}`);
       startTransition(() => router.refresh());
     } finally {
       setBusy(false);
+      setProgress([]);
     }
   }
 
@@ -162,6 +199,16 @@ export function SupportThread({
           event.preventDefault();
           void send();
         }}
+        /* A screenshot on the clipboard, pasted into the reply box. */
+        onPaste={(event) => {
+          const pasted = filesFrom(event.clipboardData);
+          if (pasted.length === 0 || busy) return;
+          event.preventDefault();
+          const next = addPicked(files, pasted);
+          const wrong = checkPicked(next);
+          if (wrong) setError(wrong);
+          else setFiles(next);
+        }}
       >
         <label className="block">
           <span className="label-cap">Reply</span>
@@ -176,16 +223,7 @@ export function SupportThread({
         {closed ? (
           <p className="text-[12px] text-ink-soft">This ticket is closed. Sending a reply will reopen it.</p>
         ) : null}
-        <input
-          ref={picker}
-          type="file"
-          name="attachments"
-          multiple
-          accept={SUPPORT_IMAGE_TYPES.join(',')}
-          aria-label="Attach screenshots, up to 3"
-          className="block w-full text-[13px] text-ink-soft"
-          onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-        />
+        <AttachmentPicker files={files} onChange={setFiles} disabled={busy} progress={progress} />
 
         {error ? (
           <p role="alert" className="text-[13px] text-alarm">
@@ -209,7 +247,7 @@ export function SupportThread({
             </button>
           )}
           <button type="submit" className="btn-primary" disabled={busy || body.trim() === ''}>
-            {busy ? 'Sending' : 'Send reply'}
+            {busy ? (files.length > 0 ? 'Uploading' : 'Sending') : 'Send reply'}
           </button>
         </div>
       </form>

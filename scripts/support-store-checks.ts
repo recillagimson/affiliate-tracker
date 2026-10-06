@@ -15,7 +15,9 @@ import {
   MAX_BODY,
   MAX_SUBJECT,
   SUPPORT_CATEGORIES,
-  SUPPORT_IMAGE_TYPES,
+  SUPPORT_BUCKET,
+  SUPPORT_FILE_TYPES,
+  MAX_FILE_BYTES,
   SUPPORT_STATUSES,
 } from '../src/lib/support';
 import { supportFailure, toMessage, toTicket } from '../src/lib/support-store';
@@ -59,14 +61,9 @@ check(
   listIn('support_tickets_status_check').join() === SUPPORT_STATUSES.join(),
   listIn('support_tickets_status_check'),
 );
-check(
-  'and the image types',
-  listIn('support_attachments_type_check').join() === SUPPORT_IMAGE_TYPES.join(),
-  listIn('support_attachments_type_check'),
-);
+
 check('the subject limit is the same number', sql.includes(`between 1 and ${MAX_SUBJECT}`));
 check('the body limit is the same number', sql.includes(`between 1 and ${MAX_BODY}`));
-check('the attachment count is the same number', sql.includes(`jsonb_array_length(v_files) > ${MAX_ATTACHMENTS}`));
 for (const table of ['support_tickets', 'support_messages', 'support_attachments']) {
   check(`${table} has row level security on`, sql.includes(`alter table public.${table} enable row level security`));
   check(`${table} is revoked from the public roles`, sql.includes(`revoke all on public.${table} from anon, authenticated`));
@@ -83,6 +80,42 @@ check('and for admins', /admin_read_at = now\(\)/.test(markRead));
 check('an affiliate can only mark their own', /affiliate_read_at = now\(\)\s+where id = p_ticket_id and user_id = p_user_id/.test(markRead));
 const literals = [...sql.replace(/--.*$/gm, '').matchAll(/'([^']*)'/g)].map((m) => m[1]!);
 check('no sentence in it carries a dash', literals.every((text) => !/[\u2013\u2014]/.test(text)));
+
+console.log('- the storage migration -');
+const STORAGE = join(__dirname, '..', 'supabase', 'migrations', '20261007120000_support_attachment_storage.sql');
+check('it exists under its name', existsSync(STORAGE));
+const storage = existsSync(STORAGE) ? readFileSync(STORAGE, 'utf8') : '';
+function typesIn(text: string, after: string): string[] {
+  const at = text.indexOf(after);
+  if (at === -1) return [];
+  const match = /\(([^)]*)\)|\[([^\]]*)\]/.exec(text.slice(at + after.length, at + after.length + 500));
+  const inner = match ? (match[1] ?? match[2] ?? '') : '';
+  return [...inner.matchAll(/'([^']*)'/g)].map((m) => m[1]!);
+}
+check(
+  'the table accepts the same file types, in the same order',
+  typesIn(storage, 'constraint support_attachments_type_check').join() === SUPPORT_FILE_TYPES.join(),
+  typesIn(storage, 'constraint support_attachments_type_check'),
+);
+check(
+  'and so does the bucket',
+  typesIn(storage, 'array').join() === SUPPORT_FILE_TYPES.join(),
+  typesIn(storage, 'array'),
+);
+check('the bucket is the one the app uses', storage.includes(`'${SUPPORT_BUCKET}'`));
+check('the bucket is private', /values \(\s*'support-attachments',\s*'support-attachments',\s*false,/.test(storage));
+check('the bucket\'s size limit is the same number', storage.includes(String(MAX_FILE_BYTES)));
+check('the files are no longer kept in the table', /drop column if exists data/.test(storage));
+check('each attachment has a path', /path text/.test(storage) && /alter column path set not null/.test(storage));
+for (const fn of ['create_support_ticket', 'add_support_message']) {
+  const body = storage.slice(storage.indexOf(`function public.${fn}(`));
+  check(`${fn} is redefined`, storage.includes(`create or replace function public.${fn}(`));
+  check(`${fn} counts to the same number`, body.includes(`jsonb_array_length(v_files) > ${MAX_ATTACHMENTS}`));
+  check(`${fn} stores a path`, /x\.path/.test(body) && !/x\.data/.test(body));
+}
+check('it refuses to drop files it would lose', /raise exception/.test(storage) && /data is not null/.test(storage));
+const storageLiterals = [...storage.replace(/--.*$/gm, '').matchAll(/'([^']*)'/g)].map((m) => m[1]!);
+check('no sentence in it carries a dash', storageLiterals.every((text) => !/[\u2013\u2014]/.test(text)));
 
 console.log('- rows -');
 const ticket = toTicket({

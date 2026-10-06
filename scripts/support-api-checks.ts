@@ -19,6 +19,7 @@ import {
   readReply,
   readSupportAction,
   readTicketId,
+  readUpload,
   shouldMarkRead,
   SUPPORT_LIMITS,
   throttleApplies,
@@ -47,7 +48,7 @@ const affiliate = { role: 'affiliate' as const, id: 'u1' };
 const admin = { role: 'admin' as const, id: 'a1' };
 
 console.log('- actions -');
-for (const action of ['open', 'reply', 'close', 'reopen', 'read']) {
+for (const action of ['open', 'reply', 'close', 'reopen', 'read', 'upload']) {
   check(`${action} is an action`, readSupportAction(action) === action);
 }
 check('nothing else is', readSupportAction('delete') === null && readSupportAction(undefined) === null && readSupportAction(1) === null);
@@ -97,14 +98,30 @@ check('a message at the limit is kept', readOpen({ ...base, body: 'x'.repeat(MAX
 check('no category is refused, on that field', refusedOpen({ ...base, category: 'other' })?.fields?.category !== undefined);
 check('a subject that is not text is refused', refusedOpen({ ...base, subject: 5 })?.status === 400);
 check('a bad attachment is refused', refusedOpen({ ...base, attachments: 'x' })?.fields?.attachments !== undefined);
-check('no attachments is fine', opened.ok && opened.value.files.length === 0);
+check('no attachments is fine', opened.ok && opened.value.refs.length === 0);
+const UUID = '3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b';
+const withFile = readOpen({ ...base, attachments: [{ path: `u1/${UUID}/shot.png`, name: 'shot.png' }] }, affiliate);
+check('a file this affiliate uploaded rides along', withFile.ok && withFile.value.refs.length === 1);
+check('a file somebody else uploaded does not', refusedOpen({ ...base, attachments: [{ path: `u2/${UUID}/shot.png`, name: 'shot.png' }] })?.fields?.attachments !== undefined);
+const adminFile = readOpen({ ...base, userId: 'u2', attachments: [{ path: `a1/${UUID}/shot.png`, name: 'shot.png' }] }, admin);
+check('an admin attaches from their own folder, whoever the ticket is for', adminFile.ok && adminFile.value.refs.length === 1);
+
+console.log('- uploading -');
+const up = readUpload({ files: [{ name: 'clip.mp4', type: 'video/mp4', size: 1000 }] }, affiliate);
+check('an upload is read', up.ok && up.value.key === 'u1' && up.value.files.length === 1);
+const noId = readUpload({ files: [{ name: 'clip.mp4', type: 'video/mp4', size: 1000 }] }, { id: '' });
+check('an account with no id cannot upload', !noId.ok && noId.refusal.status === 403);
+const badUp = readUpload({ files: [{ name: 'a.html', type: 'text/html', size: 10 }] }, affiliate);
+check('a file that cannot be attached is refused before anything is uploaded', !badUp.ok && badUp.refusal.status === 400);
+if (!badUp.ok) note(badUp.refusal);
+check('uploads are limited too', SUPPORT_LIMITS.upload.limit === 60 && SUPPORT_LIMITS.upload.windowMs === 3_600_000);
 
 console.log('- replying -');
-const reply = readReply({ ticketId: '12', body: ' Thanks ' });
+const reply = readReply({ ticketId: '12', body: ' Thanks ' }, affiliate);
 check('a reply is read', reply.ok && reply.value.ticketId === '12' && reply.value.body === 'Thanks');
-const noTicket = readReply({ body: 'x' });
+const noTicket = readReply({ body: 'x' }, affiliate);
 check('a reply to nothing is a 400', !noTicket.ok && noTicket.refusal.status === 400);
-const empty = readReply({ ticketId: '12', body: '  ' });
+const empty = readReply({ ticketId: '12', body: '  ' }, affiliate);
 check('an empty reply is refused', !empty.ok && empty.refusal.fields?.body !== undefined);
 if (!empty.ok) note(empty.refusal);
 

@@ -4,8 +4,7 @@
  * An affiliate opens a ticket, admins answer it, and the two sides talk until
  * it is closed. Everything here is a decision that needs no database and no
  * request: who is on which side, who may read what, when a ticket counts as
- * unread, what the list says about it, and what an attached image has to be
- * before it is kept. scripts/support-checks.ts pins all of it.
+ * unread, what the list says about it, and which files a message may carry. scripts/support-checks.ts pins all of it.
  *
  * Named "support" rather than "ticket" throughout, because that word already
  * means the view-as ticket in lib/impersonation.ts and the request counter in
@@ -15,7 +14,7 @@
  * too, so the checks load this file without a database, a session or Next.js.
  */
 
-import { cleanFileName, decodedSize, headBytes, isBase64, matchesType } from './receipt-file';
+import { cleanFileName } from './receipt-file';
 import type { Viewer } from './viewer-core';
 
 /* -------------------------------------------------------------- constants --- */
@@ -38,24 +37,36 @@ export type SupportStatus = (typeof SUPPORT_STATUSES)[number];
 export type SupportSide = 'affiliate' | 'admin';
 
 /**
- * Images only. A ticket attachment is a screenshot of what somebody is asking
- * about; a PDF is a document, and documents already have their own places in
- * this app. SVG is left out for the reason receipt-file.ts gives.
+ * What can be attached: a screenshot, a screen recording, or a PDF. The same
+ * list, in the same order, as the bucket's allowed types and the table's check
+ * constraint in the storage migration. SVG and HTML are left out on purpose:
+ * both can carry script.
  */
-export const SUPPORT_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
-export type SupportImageType = (typeof SUPPORT_IMAGE_TYPES)[number];
+export const SUPPORT_FILE_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'application/pdf',
+] as const;
+export type SupportFileType = (typeof SUPPORT_FILE_TYPES)[number];
+
+/** The private Supabase Storage bucket the files live in. */
+export const SUPPORT_BUCKET = 'support-attachments';
 
 export const MAX_SUBJECT = 150;
 export const MAX_BODY = 5_000;
-export const MAX_ATTACHMENTS = 3;
+export const MAX_ATTACHMENTS = 5;
 
 /*
- * Across one message, not per file. The files travel as base64 inside the JSON
- * body, a third larger than they are, and the host refuses a request over
- * about 4.5 MB. Three megabytes of image is four of base64, which leaves room
- * for the text around it.
+ * Per file. A minute or two of screen recording, and the most a Supabase
+ * project accepts in one upload without being reconfigured. The files go from
+ * the browser straight to storage, so the host's request limit is not in the
+ * way; this number and the bucket's own limit are.
  */
-export const MAX_ATTACHMENT_BYTES = 3_000_000;
+export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 export function isSupportCategory(value: unknown): value is SupportCategory {
   return typeof value === 'string' && (SUPPORT_CATEGORIES as readonly string[]).includes(value);
@@ -65,8 +76,24 @@ export function isSupportStatus(value: unknown): value is SupportStatus {
   return typeof value === 'string' && (SUPPORT_STATUSES as readonly string[]).includes(value);
 }
 
-export function isSupportImageType(value: unknown): value is SupportImageType {
-  return typeof value === 'string' && (SUPPORT_IMAGE_TYPES as readonly string[]).includes(value);
+export function isSupportFileType(value: unknown): value is SupportFileType {
+  return typeof value === 'string' && (SUPPORT_FILE_TYPES as readonly string[]).includes(value);
+}
+
+/** How a file is shown: drawn, played, or linked. '' for a type that cannot be attached. */
+export function fileKind(type: string): 'image' | 'video' | 'document' | '' {
+  if (!isSupportFileType(type)) return '';
+  if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('video/')) return 'video';
+  return 'document';
+}
+
+/** A size the way people say it. */
+export function sizeText(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /* ------------------------------------------------------------------ shape --- */
@@ -104,8 +131,14 @@ export type SupportMessage = {
   attachments: SupportAttachmentMeta[];
 };
 
-/** An image that has passed every check, as the store keeps it. `data` is bare base64. */
-export type SupportUpload = { name: string; type: SupportImageType; data: string; size: number };
+/** A file already in storage and checked there, as the store records it. */
+export type SupportUpload = { name: string; type: SupportFileType; size: number; path: string };
+
+/** A file somebody wants to upload, as described by the browser before a byte has moved. */
+export type UploadAsk = { name: string; type: SupportFileType; size: number };
+
+/** A file a message claims to carry: where it was uploaded, and what to call it. */
+export type AttachmentRef = { path: string; name: string };
 
 /* ----------------------------------------------------------------- access --- */
 
@@ -249,66 +282,93 @@ export function supportHref(filter: {
 
 /* ------------------------------------------------------------ attachments --- */
 
-export type AttachmentCheck =
-  | { ok: true; files: SupportUpload[] }
-  | { ok: false; error: string; hint: string };
+/*
+ * Files do not travel through this app. The browser asks for somewhere to put
+ * them, uploads each one straight to a private storage bucket, and then sends
+ * the message with the paths it was given. So there are two things to check,
+ * at two moments: what somebody asks to upload, and which uploaded paths a
+ * message is allowed to claim. What the file actually is, once it has landed,
+ * is read back from storage by the route (its real size and type), never
+ * taken from the browser's word.
+ */
 
-const BROKEN = 'Those images did not arrive in one piece.';
-const AGAIN = 'Try attaching them again.';
+type Refused = { ok: false; error: string; hint: string };
 
-function no(error: string, hint: string): AttachmentCheck {
+function no(error: string, hint: string): Refused {
   return { ok: false, error, hint };
 }
 
-/**
- * Everything a message's images have to be before they are stored, in the
- * order that costs least to ask: how many, what they claim to be, how big they
- * are together, and last the bytes themselves.
- *
- * The same two defences receipts get. The declared type is what the file was
- * called, not what it is, so the first bytes have to be that type's signature
- * or the file is refused rather than stored and trusted later.
- */
-export function checkSupportAttachments(input: unknown): AttachmentCheck {
-  if (input === undefined || input === null) return { ok: true, files: [] };
-  if (!Array.isArray(input)) return no(BROKEN, AGAIN);
+const UNREADABLE = 'Those files could not be read.';
+const AGAIN = 'Try attaching them again.';
+const TYPES_HINT = 'A PNG, JPEG or WebP image, an MP4, MOV or WebM video, or a PDF.';
+
+/** What an upload has to be before it is given somewhere to go. */
+export function checkUploadRequest(input: unknown): { ok: true; files: UploadAsk[] } | Refused {
+  if (!Array.isArray(input) || input.length === 0) return no('Choose at least one file.', AGAIN);
   if (input.length > MAX_ATTACHMENTS) {
-    return no(`Up to ${MAX_ATTACHMENTS} images can be attached to a message.`, 'Remove one and send it again.');
+    return no(`Up to ${MAX_ATTACHMENTS} files can be attached to a message.`, 'Remove one and send it again.');
   }
-
-  const files: SupportUpload[] = [];
-  let total = 0;
+  const files: UploadAsk[] = [];
   for (const entry of input) {
-    const item = entry !== null && typeof entry === 'object' ? (entry as Record<string, unknown>) : {};
+    const item = entry !== null && typeof entry === 'object' ? (entry as Record<string, unknown>) : null;
+    if (!item) return no(UNREADABLE, AGAIN);
     const type = item.type;
-    if (!isSupportImageType(type)) {
-      return no('Only images can be attached.', 'A PNG, JPEG or WebP screenshot.');
+    if (!isSupportFileType(type)) return no('That kind of file cannot be attached.', TYPES_HINT);
+    const size = item.size;
+    if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0) return no(UNREADABLE, AGAIN);
+    if (size > MAX_FILE_BYTES) {
+      return no('One of those files is too large.', 'Up to 50 MB each. Trim the video, or send a shorter one.');
     }
-
-    const prefix = `data:${type};base64,`;
-    const data = item.data;
-    if (typeof data !== 'string' || !data.startsWith(prefix)) return no(BROKEN, AGAIN);
-    const payload = data.slice(prefix.length);
-    if (!payload) return no(BROKEN, AGAIN);
-
-    // Counted from the length before the payload is scanned, so an oversized
-    // upload is turned away without reading all of it.
-    const size = decodedSize(payload);
-    total += size;
-    if (total > MAX_ATTACHMENT_BYTES) {
-      return no('Those images are too large together.', 'Up to about 3 MB in total. Try fewer, or crop them.');
-    }
-
-    if (!isBase64(payload)) return no(BROKEN, AGAIN);
-    if (!matchesType(headBytes(payload), type)) {
-      return no(
-        'One of those files does not look like the image it claims to be.',
-        'Attach the original PNG, JPEG or WebP, not a renamed copy.',
-      );
-    }
-
-    const name = typeof item.name === 'string' && item.name.trim() !== '' ? cleanFileName(item.name) : 'image';
-    files.push({ name, type, data: payload, size });
+    const name = typeof item.name === 'string' && item.name.trim() !== '' ? cleanFileName(item.name) : 'file';
+    files.push({ name, type, size });
   }
   return { ok: true, files };
+}
+
+/**
+ * The folder one account's uploads go into. Their id, with anything a storage
+ * path would trip on replaced: the environment admin's id has a colon in it.
+ */
+export function uploaderKey(viewerId: string): string {
+  return viewerId.replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
+/**
+ * Where one file goes: the uploader's folder, a part nobody can guess, and
+ * the file's own name made safe. The unguessable part is what keeps two files
+ * called screenshot.png apart, and what makes a path worth nothing to anybody
+ * who was not handed it.
+ */
+export function newUploadPath(key: string, unique: string, name: string): string {
+  const safe = cleanFileName(name).replace(/[^A-Za-z0-9._-]/g, '_').replace(/\.{2,}/g, '_').slice(0, 120) || 'file';
+  return `${key}/${unique}/${safe}`;
+}
+
+const UNIQUE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+/**
+ * Which uploaded files a message may carry.
+ *
+ * Only paths inside the sender's own folder, in exactly the shape
+ * newUploadPath makes. A message cannot name a file somebody else uploaded,
+ * or reach for anything else in the bucket by writing a path by hand.
+ */
+export function checkAttachmentRefs(input: unknown, key: string): { ok: true; refs: AttachmentRef[] } | Refused {
+  if (input === undefined || input === null) return { ok: true, refs: [] };
+  if (!Array.isArray(input)) return no(UNREADABLE, AGAIN);
+  if (input.length > MAX_ATTACHMENTS) {
+    return no(`Up to ${MAX_ATTACHMENTS} files can be attached to a message.`, 'Remove one and send it again.');
+  }
+  const shape = key ? new RegExp(`^${key}/${UNIQUE}/[A-Za-z0-9._-]{1,120}$`) : null;
+  const refs: AttachmentRef[] = [];
+  const seen = new Set<string>();
+  for (const entry of input) {
+    const item = entry !== null && typeof entry === 'object' ? (entry as Record<string, unknown>) : {};
+    const path = typeof item.path === 'string' ? item.path : '';
+    if (!shape || !shape.test(path) || path.includes('..') || seen.has(path)) return no(UNREADABLE, AGAIN);
+    seen.add(path);
+    const name = typeof item.name === 'string' && item.name.trim() !== '' ? cleanFileName(item.name) : 'file';
+    refs.push({ path, name });
+  }
+  return { ok: true, refs };
 }

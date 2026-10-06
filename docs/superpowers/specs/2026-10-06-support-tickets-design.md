@@ -21,7 +21,7 @@ and an admin can see at a glance which tickets are waiting on them.
 | Reply model | Threaded conversation in the app |
 | Notifications | Unread badge for both sides, email to the affiliate, Slack to admins |
 | Category | Yes: Question, Payout issue, Bug, Feedback |
-| Attachments | Images only, stored in the database like payout receipts |
+| Attachments | Images, video and PDF in a private Supabase Storage bucket (revised 2026-10-07; originally images in the database) |
 | Who can open | Affiliates, and admins on behalf of a chosen affiliate |
 | Reopening | A reply on a closed ticket reopens it |
 | Unread state for admins | Shared: read by one admin is read for all |
@@ -68,18 +68,34 @@ the interface calls the thing.
 
 ### Attachments
 
-- PNG, JPEG or WebP. PDF is not accepted here.
-- At most 3 per message and 3,000,000 decoded bytes across the message. The
-  combined limit exists because the request carries the files as base64 and
-  the hosting platform refuses bodies over about 4.5 MB.
-- Each file is checked with the existing helpers in `src/lib/receipt-file.ts`
-  (`isBase64`, `decodedSize`, `headBytes`, `matchesType`, `cleanFileName`):
-  the first bytes must be the signature of the declared type.
-- Served by a route that requires a session and checks the viewer is an admin
-  or owns the ticket, using `receiptHeaders` so `nosniff` is always set and a
-  row whose bytes do not match its type downloads as plain bytes.
-- Attachments are optional and always accompany a body; a message cannot be
-  images alone.
+Revised 2026-10-07: attachments moved from base64 in the table to Supabase
+Storage so a ticket can carry video and PDF. The plan document describes the
+earlier design; `20261007120000_support_attachment_storage.sql` and the code
+are current.
+
+- PNG, JPEG or WebP images, MP4, MOV or WebM video, and PDF.
+- At most 5 per message, 50 MB each (52,428,800 bytes).
+- Files live in a private bucket, `support-attachments`, with no storage
+  policies: only the service role reads or writes it. The bucket enforces
+  the size limit and the type list itself.
+- Upload is direct from the browser. The `upload` action checks each file's
+  declared name, type and size and answers with a signed upload URL per file,
+  under `<uploader id>/<uuid>/<safe name>`. The browser PUTs each file to
+  storage, then sends the message with the paths.
+- A message may only name paths inside the sender's own folder, in exactly
+  that shape. Before anything is written the route reads each path back from
+  storage and records the real size and type; a path with nothing at it is
+  refused.
+- `GET /api/support/attachments/<id>` checks the viewer may read the ticket
+  and redirects to a signed link valid for 10 minutes. Files are served from
+  storage's domain, never from this app's origin.
+- Attachments are optional and always accompany a body.
+- The attach control accepts drag and drop, a pasted screenshot, or Browse,
+  lists each file with a preview, size and Remove, and shows upload progress.
+- An affiliate's new-ticket form shows who it is filed as, read from the
+  session.
+- Files uploaded but never attached to a sent message are left in the bucket;
+  nothing cleans them up yet.
 
 ### Read state and the badge
 
@@ -169,11 +185,11 @@ Index: `(ticket_id, id)`.
 | `message_id` | bigint not null | FK `support_messages (id)` on delete cascade |
 | `ticket_id` | bigint not null | FK `support_tickets (id)` on delete cascade; lets the file route check ownership in one read |
 | `name` | text not null | |
-| `type` | text not null | check in the three image types |
-| `size` | integer not null | decoded bytes |
-| `data` | text not null | base64 |
+| `type` | text not null | check in the seven file types |
+| `size` | bigint not null | bytes, read back from storage |
+| `path` | text not null | object path in the bucket |
 
-Index: `(message_id)`. List queries spell out columns and never select `data`.
+Index: `(message_id)`.
 
 ### Functions
 

@@ -3,29 +3,39 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { AttachmentPicker } from '@/components/AttachmentPicker';
 import { Modal } from '@/components/Modal';
 import {
   CATEGORY_LABELS,
   MAX_BODY,
   MAX_SUBJECT,
   SUPPORT_CATEGORIES,
-  SUPPORT_IMAGE_TYPES,
   type SupportCategory,
 } from '@/lib/support';
-import { openedNotice, postSupport, readImages } from '@/lib/support-client';
+import { addPicked, checkPicked, filesFrom, openedNotice, postSupport, uploadFiles } from '@/lib/support-client';
 
 /**
  * Opening a ticket.
  *
  * A button and the dialog behind it. An affiliate fills in what it is about
- * and what they want to say. An admin also chooses who it is for, which is
- * what `people` being a list rather than null means; the route decides
- * ownership again from the session whatever this form posts.
+ * and what they want to say, and is shown whose name it will be filed under:
+ * that is `filer`, read from the session by the page, never typed. An admin
+ * instead chooses who the ticket is for, which is what `people` being a list
+ * rather than null means. Either way the route decides ownership again from
+ * the session, whatever this form posts.
  *
  * On success it goes straight to the new conversation, which is where the
  * person's next message will be read.
  */
-export function NewTicket({ people }: { people: { id: string; name: string }[] | null }) {
+export function NewTicket({
+  people,
+  filer,
+}: {
+  /** The affiliates an admin can open a ticket for. Null for an affiliate. */
+  people: { id: string; name: string }[] | null;
+  /** Who an affiliate's ticket is filed as. Null for an admin. */
+  filer: string | null;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [userId, setUserId] = useState('');
@@ -33,6 +43,7 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
   const [category, setCategory] = useState<SupportCategory>('question');
   const [body, setBody] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [progress, setProgress] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [problems, setProblems] = useState<Record<string, string>>({});
@@ -45,9 +56,15 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
     setError('');
     setProblems({});
     try {
-      const images = await readImages(files);
-      if (!images.ok) {
-        setError(images.error);
+      const uploaded = await uploadFiles(files, (index, percent) =>
+        setProgress((current) => {
+          const next = [...current];
+          next[index] = percent;
+          return next;
+        }),
+      );
+      if (!uploaded.ok) {
+        setError(uploaded.error);
         return;
       }
       const result = await postSupport({
@@ -56,7 +73,7 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
         subject,
         category,
         body,
-        attachments: images.attachments,
+        attachments: uploaded.attachments,
       });
       if (!result.ok) {
         setError(result.error);
@@ -80,6 +97,7 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
       router.refresh();
     } finally {
       setBusy(false);
+      setProgress([]);
     }
   }
 
@@ -113,7 +131,25 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
             event.preventDefault();
             void send();
           }}
+          /* A screenshot on the clipboard, pasted anywhere in the form,
+             the message box included. Text pastes are left alone. */
+          onPaste={(event) => {
+            const pasted = filesFrom(event.clipboardData);
+            if (pasted.length === 0 || busy) return;
+            event.preventDefault();
+            const next = addPicked(files, pasted);
+            const wrong = checkPicked(next);
+            if (wrong) setError(wrong);
+            else setFiles(next);
+          }}
         >
+          {filer ? (
+            <p className="flex items-center gap-2 rounded-[8px] bg-paper-sunk px-3 py-2.5 text-[13px] text-ink-soft">
+              <span className="label-cap">Filing as</span>
+              <strong className="font-semibold text-ink">{filer}</strong>
+            </p>
+          ) : null}
+
           {people ? (
             <label className="block">
               <span className="label-cap">Who is it for</span>
@@ -174,17 +210,12 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
             />
           </label>
 
-          <label className="block">
-            <span className="label-cap">Screenshots (optional, up to 3)</span>
-            <input
-              type="file"
-              name="attachments"
-              multiple
-              accept={SUPPORT_IMAGE_TYPES.join(',')}
-              className="mt-1.5 block w-full text-[13px] text-ink-soft"
-              onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-            />
-          </label>
+          <div>
+            <span className="label-cap">Attachments (optional)</span>
+            <div className="mt-1.5">
+              <AttachmentPicker files={files} onChange={setFiles} disabled={busy} progress={progress} />
+            </div>
+          </div>
 
           {error ? (
             <p role="alert" className="text-[13px] text-alarm">
@@ -197,7 +228,7 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
               Cancel
             </button>
             <button type="submit" className="btn-primary" disabled={busy}>
-              {busy ? 'Sending' : 'Send'}
+              {busy ? (files.length > 0 ? 'Uploading' : 'Sending') : 'Send'}
             </button>
           </div>
         </form>

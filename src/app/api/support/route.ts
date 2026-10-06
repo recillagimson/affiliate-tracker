@@ -7,18 +7,28 @@ import { storeFailure, type Refusal } from '@/lib/payout-api';
 import { rateLimit } from '@/lib/ratelimit';
 import { originFromHeaders } from '@/lib/request';
 import { announceSupport } from '@/lib/slack';
-import { sideFor, type SupportCategory } from '@/lib/support';
+import {
+  isSupportFileType,
+  MAX_FILE_BYTES,
+  newUploadPath,
+  sideFor,
+  type AttachmentRef,
+  type SupportCategory,
+  type SupportUpload,
+} from '@/lib/support';
 import {
   alreadyRefusal,
   asBody,
   authorFor,
   emailSkipReason,
+  missingUpload,
   noSuchTicket,
   ownerFilter,
   readOpen,
   readReply,
   readSupportAction,
   readTicketId,
+  readUpload,
   shouldMarkRead,
   SUPPORT_LIMITS,
   throttleApplies,
@@ -27,18 +37,21 @@ import {
 import {
   addSupportMessage,
   closeSupportTicket,
+  createSupportUpload,
   markSupportRead,
   openSupportTicket,
   readSupportTicket,
   reopenSupportTicket,
+  statSupportUpload,
 } from '@/lib/support-store';
 import { findUserById } from '@/lib/users';
 
 /**
  * Everything somebody does to a support ticket.
  *
- * Five actions on one POST: `open` a ticket, `reply` on one, `close` it,
- * `reopen` it, and mark it `read`. Both sides use the same route. Which side
+ * Six actions on one POST: `open` a ticket, `reply` on one, `close` it,
+ * `reopen` it, mark it `read`, and `upload`, which hands back somewhere to put
+ * files. Both sides use the same route. Which side
  * the caller is on, and which tickets they may touch, comes from the session
  * and nothing else: an affiliate's user id goes into every query, so somebody
  * else's ticket is never found rather than found and refused, and it answers
@@ -48,6 +61,12 @@ import { findUserById } from '@/lib/users';
  * They may write for them, and the message records that an admin did. The one
  * thing they do not do is mark the ticket read, because looking at somebody's
  * screen is not that person reading their reply.
+ *
+ * Files never pass through here. `upload` answers with a signed URL per file,
+ * the browser sends each one straight to a private storage bucket, and the
+ * message then names the paths it was given. Before anything is written each
+ * path is read back from storage, so the size and type a message records are
+ * what is really there, and a path that was never uploaded to is refused.
  *
  * A message is written first and announced afterwards. An email or a Slack
  * post that fails never undoes it: the admin is told no email went and why,
@@ -77,7 +96,7 @@ export async function POST(request: Request) {
 
   const action = readSupportAction(body.action);
   if (!action) {
-    return refuse({ status: 400, error: 'No such action.', hint: 'Expected open, reply, close, reopen or read.' });
+    return refuse({ status: 400, error: 'No such action.', hint: 'Expected open, reply, close, reopen, read or upload.' });
   }
 
   const origin = originFromHeaders(request.headers, configuredBaseUrl());
@@ -85,6 +104,7 @@ export async function POST(request: Request) {
     if (action === 'open') return await open(viewer, body, origin);
     if (action === 'reply') return await reply(viewer, body, origin);
     if (action === 'read') return await read(viewer, body);
+    if (action === 'upload') return await upload(viewer, body);
     return await move(viewer, body, action);
   } catch (error) {
     // An admin is shown the raw reason, as on every other admin route here; an
@@ -96,11 +116,41 @@ export async function POST(request: Request) {
 }
 
 /** Refuses when an affiliate has sent too much. Counted only for a request that was otherwise good. */
-function throttled(viewer: Viewer, action: 'open' | 'reply'): NextResponse | null {
+function throttled(viewer: Viewer, action: 'open' | 'reply' | 'upload'): NextResponse | null {
   if (!throttleApplies(viewer)) return null;
   const result = rateLimit(`support:${action}:${viewer.id}`, SUPPORT_LIMITS[action]);
   if (result.ok) return null;
   return refuse(tooMany(), { 'retry-after': String(result.retryAfterSeconds) });
+}
+
+/** Somewhere to put each file: a path in the viewer's own folder and a URL that accepts one upload to it. */
+async function upload(viewer: Viewer, body: Record<string, unknown>): Promise<NextResponse> {
+  const parsed = readUpload(body, viewer);
+  if (!parsed.ok) return refuse(parsed.refusal);
+  const limited = throttled(viewer, 'upload');
+  if (limited) return limited;
+
+  const uploads = await Promise.all(
+    parsed.value.files.map(async (file) => {
+      const path = newUploadPath(parsed.value.key, crypto.randomUUID(), file.name);
+      return { path, url: await createSupportUpload(path) };
+    }),
+  );
+  return NextResponse.json({ ok: true, uploads });
+}
+
+/**
+ * The files a message names, as storage actually has them. Null when any one
+ * is missing, is not a type this app attaches, or is over the size limit.
+ */
+async function stored(refs: AttachmentRef[]): Promise<SupportUpload[] | null> {
+  const files: SupportUpload[] = [];
+  for (const ref of refs) {
+    const found = await statSupportUpload(ref.path);
+    if (!found || !isSupportFileType(found.type) || found.size > MAX_FILE_BYTES) return null;
+    files.push({ name: ref.name, type: found.type, size: found.size, path: ref.path });
+  }
+  return files;
 }
 
 async function open(viewer: Viewer, body: Record<string, unknown>, origin: string): Promise<NextResponse> {
@@ -108,6 +158,9 @@ async function open(viewer: Viewer, body: Record<string, unknown>, origin: strin
   if (!parsed.ok) return refuse(parsed.refusal);
   const limited = throttled(viewer, 'open');
   if (limited) return limited;
+
+  const files = await stored(parsed.value.refs);
+  if (!files) return refuse(missingUpload());
 
   const author = authorFor(viewer);
   const ticketId = await openSupportTicket({
@@ -118,7 +171,7 @@ async function open(viewer: Viewer, body: Record<string, unknown>, origin: strin
     openedByRole: author.role,
     authorId: author.id,
     body: parsed.value.body,
-    files: parsed.value.files,
+    files,
   });
 
   const told = await tell({
@@ -135,7 +188,7 @@ async function open(viewer: Viewer, body: Record<string, unknown>, origin: strin
 }
 
 async function reply(viewer: Viewer, body: Record<string, unknown>, origin: string): Promise<NextResponse> {
-  const parsed = readReply(body);
+  const parsed = readReply(body, viewer);
   if (!parsed.ok) return refuse(parsed.refusal);
 
   // Read with the owner in the query, before anything is written: a reply to
@@ -146,6 +199,9 @@ async function reply(viewer: Viewer, body: Record<string, unknown>, origin: stri
   const limited = throttled(viewer, 'reply');
   if (limited) return limited;
 
+  const files = await stored(parsed.value.refs);
+  if (!files) return refuse(missingUpload());
+
   const author = authorFor(viewer);
   await addSupportMessage({
     ticketId: ticket.id,
@@ -153,7 +209,7 @@ async function reply(viewer: Viewer, body: Record<string, unknown>, origin: stri
     authorId: author.id,
     authorName: author.name,
     body: parsed.value.body,
-    files: parsed.value.files,
+    files,
   });
 
   const told = await tell({

@@ -14,17 +14,22 @@ import {
   buildSupportRows,
   CATEGORY_LABELS,
   categoryFilterFrom,
-  checkSupportAttachments,
+  checkAttachmentRefs,
+  checkUploadRequest,
+  fileKind,
   isSupportCategory,
   isUnreadFor,
-  MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
+  MAX_FILE_BYTES,
   mayReadTicket,
+  newUploadPath,
   sideFor,
+  sizeText,
   statusFilterFrom,
   SUPPORT_CATEGORIES,
   supportHref,
   unreadCount,
+  uploaderKey,
   waitingLabel,
   type SupportTicket,
 } from '../src/lib/support';
@@ -159,60 +164,66 @@ check(
 );
 
 console.log('- attachments -');
-const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-function image(type: string, head: number[], size: number, name = 'shot.png') {
-  const bytes = Buffer.concat([Buffer.from(head), Buffer.alloc(Math.max(0, size - head.length))]);
-  return { name, type, data: `data:${type};base64,${bytes.toString('base64')}` };
-}
-const none = checkSupportAttachments(undefined);
-check('no attachments is fine', none.ok && none.files.length === 0);
-check('null too', checkSupportAttachments(null).ok);
-const good = checkSupportAttachments([image('image/png', PNG, 2000)]);
-check('a real PNG is kept', good.ok && good.files.length === 1);
-check('with its exact size', good.ok && good.files[0]!.size === 2000);
-check('and stored as bare base64', good.ok && !good.files[0]!.data.startsWith('data:'));
-check('its name is kept', good.ok && good.files[0]!.name === 'shot.png');
-const pathy = checkSupportAttachments([image('image/png', PNG, 2000, 'C:\\Users\\me\\shot.png')]);
-check('a path is cut down to the file name', pathy.ok && pathy.files[0]!.name === 'shot.png');
-const nameless = checkSupportAttachments([{ ...image('image/png', PNG, 2000), name: undefined }]);
-check('a missing name becomes a plain one', nameless.ok && nameless.files[0]!.name === 'image');
-const jpeg = checkSupportAttachments([image('image/jpeg', [0xff, 0xd8, 0xff, 0xe0], 500)]);
-check('a JPEG is kept', jpeg.ok);
-function refused(input: unknown): string {
-  const result = checkSupportAttachments(input);
+check('five files a message', MAX_ATTACHMENTS === 5);
+check('fifty megabytes each', MAX_FILE_BYTES === 50 * 1024 * 1024);
+check('a screenshot is an image', fileKind('image/png') === 'image' && fileKind('image/webp') === 'image');
+check('a recording is a video', fileKind('video/mp4') === 'video' && fileKind('video/quicktime') === 'video' && fileKind('video/webm') === 'video');
+check('a PDF is a document', fileKind('application/pdf') === 'document');
+check('anything else is nothing', fileKind('text/html') === '' && fileKind('image/svg+xml') === '');
+check('sizes read the way people say them', sizeText(900) === '900 B' && sizeText(2048) === '2 KB' && sizeText(5 * 1024 * 1024) === '5.0 MB');
+
+function refusedUpload(input: unknown): string {
+  const result = checkUploadRequest(input);
   if (result.ok) return '';
   heard(result.error);
   heard(result.hint);
   return result.error;
 }
-check('something that is not a list is refused', refused('x') !== '');
-check('four is one too many', refused(Array.from({ length: MAX_ATTACHMENTS + 1 }, () => image('image/png', PNG, 100))) !== '');
-check('a PDF is not an image', refused([image('application/pdf', [0x25, 0x50, 0x44, 0x46, 0x2d], 500)]) !== '');
-check('an SVG is refused', refused([image('image/svg+xml', [0x3c, 0x73, 0x76, 0x67], 500)]) !== '');
-check('a text file renamed to PNG is refused', refused([image('image/png', [0x68, 0x65, 0x6c, 0x6c, 0x6f], 500)]) !== '');
-check('a PNG declared as JPEG is refused', refused([image('image/jpeg', PNG, 500)]) !== '');
-check('a missing payload is refused', refused([{ name: 'a.png', type: 'image/png', data: 'data:image/png;base64,' }]) !== '');
-check('junk in the base64 is refused', refused([{ name: 'a.png', type: 'image/png', data: 'data:image/png;base64,iVBORw0KGgo!!!!' }]) !== '');
-check('an entry that is not an object is refused', refused([null]) !== '');
-check('one image over the limit is refused', refused([image('image/png', PNG, MAX_ATTACHMENT_BYTES + 1)]) !== '');
-check(
-  'three that are over it together are refused',
-  refused([
-    image('image/png', PNG, 1_200_000),
-    image('image/png', PNG, 1_200_000),
-    image('image/png', PNG, 1_200_000),
-  ]) !== '',
-);
-const full = checkSupportAttachments([
-  image('image/png', PNG, 1_000_000),
-  image('image/png', PNG, 1_000_000),
-  image('image/png', PNG, 1_000_000),
+const asked = checkUploadRequest([
+  { name: 'C:\\Users\\me\\My Screen Shot (1).png', type: 'image/png', size: 2000 },
+  { name: 'clip.mov', type: 'video/quicktime', size: 40_000_000 },
 ]);
-check('three that add up to exactly the limit are kept', full.ok && full.files.length === 3);
-// Review focus 4: the largest body this accepts has to fit under the host's
-// 4.5 MB request limit with room for the text and the JSON around it.
-const largestBody = Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4 + 5_000 * 4 + 2_000;
-check('the largest accepted message fits a 4.5 MB request', largestBody < 4_500_000, largestBody);
+check('two good files are accepted', asked.ok && asked.files.length === 2);
+check('a path is cut down to the file name', asked.ok && asked.files[0]!.name === 'My Screen Shot (1).png');
+check('nothing to upload is refused', refusedUpload([]) !== '' && refusedUpload(undefined) !== '');
+check('six is one too many', refusedUpload(Array.from({ length: 6 }, () => ({ name: 'a.png', type: 'image/png', size: 10 }))) !== '');
+check('a web page is not an attachment', refusedUpload([{ name: 'a.html', type: 'text/html', size: 10 }]) !== '');
+check('an SVG is refused', refusedUpload([{ name: 'a.svg', type: 'image/svg+xml', size: 10 }]) !== '');
+check('a file with no type is refused', refusedUpload([{ name: 'a.mov', type: '', size: 10 }]) !== '');
+check('one byte over the limit is refused', refusedUpload([{ name: 'a.mp4', type: 'video/mp4', size: MAX_FILE_BYTES + 1 }]) !== '');
+check('exactly the limit is kept', checkUploadRequest([{ name: 'a.mp4', type: 'video/mp4', size: MAX_FILE_BYTES }]).ok);
+check('an empty file is refused', refusedUpload([{ name: 'a.png', type: 'image/png', size: 0 }]) !== '');
+check('a size that is not a number is refused', refusedUpload([{ name: 'a.png', type: 'image/png', size: '10' }]) !== '');
+check('an entry that is not an object is refused', refusedUpload([null]) !== '');
+
+const UUID = '3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b';
+check('an account id is its own folder', uploaderKey('u1') === 'u1');
+check('the env admin\'s id is made safe for a path', uploaderKey('env:admin') === 'env_admin');
+check('a blank id has no folder', uploaderKey('') === '');
+const path = newUploadPath('u1', UUID, 'My Screen Shot (1).png');
+check('a path is the folder, a unique part and a safe name', path === `u1/${UUID}/My_Screen_Shot__1_.png`, path);
+check('a name with nothing safe in it still has one', newUploadPath('u1', UUID, '\u00e9\u00e9').endsWith('/__'));
+check('a path cannot climb out of its folder', !newUploadPath('u1', UUID, '../../x.png').includes('..'), newUploadPath('u1', UUID, '../../x.png'));
+
+function refusedRefs(input: unknown, key = 'u1'): string {
+  const result = checkAttachmentRefs(input, key);
+  if (result.ok) return '';
+  heard(result.error);
+  heard(result.hint);
+  return result.error;
+}
+const noRefs = checkAttachmentRefs(undefined, 'u1');
+check('no attachments is fine', noRefs.ok && noRefs.refs.length === 0);
+const refs = checkAttachmentRefs([{ path, name: 'My Screen Shot (1).png' }], 'u1');
+check('a path this person uploaded is accepted', refs.ok && refs.refs[0]!.path === path);
+check('and keeps the name they gave it', refs.ok && refs.refs[0]!.name === 'My Screen Shot (1).png');
+check('somebody else\'s upload is refused', refusedRefs([{ path, name: 'a.png' }], 'u2') !== '');
+check('a blank folder matches nothing', refusedRefs([{ path, name: 'a.png' }], '') !== '');
+check('a path that climbs is refused', refusedRefs([{ path: `u1/${UUID}/../../u2/x.png`, name: 'a.png' }]) !== '');
+check('a path with no unique part is refused', refusedRefs([{ path: 'u1/x.png', name: 'a.png' }]) !== '');
+check('the same file twice is refused', refusedRefs([{ path, name: 'a.png' }, { path, name: 'a.png' }]) !== '');
+check('six is one too many here too', refusedRefs(Array.from({ length: 6 }, (_, n) => ({ path: `u1/${UUID.slice(0, -1)}${n}/a.png`, name: 'a.png' }))) !== '');
+check('something that is not a list is refused', refusedRefs('x') !== '');
 
 check('there was something to read', said.length > 12, said.length);
 check('no em or en dash anywhere', said.every((text) => !/[\u2013\u2014]/.test(text)), said.filter((t) => /[\u2013\u2014]/.test(t)));

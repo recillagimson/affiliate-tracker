@@ -15,7 +15,7 @@ import {
   type SupportTicket,
 } from '@/lib/support';
 import { listSupportTickets, listSupportTicketsFor, supportEnabled } from '@/lib/support-store';
-import { listUsers } from '@/lib/users';
+import { findUserById, listUsers } from '@/lib/users';
 import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -71,6 +71,8 @@ export default async function SupportPage({ searchParams }: PageProps) {
   let tickets: SupportTicket[] = [];
   let people: { id: string; name: string }[] = [];
   let error = '';
+  // Whose name an affiliate's new ticket goes under, shown on the form.
+  let filer = viewer.username;
   try {
     if (admin) {
       const [all, users] = await Promise.all([
@@ -92,7 +94,7 @@ export default async function SupportPage({ searchParams }: PageProps) {
       return (
         <div className="mx-auto w-full max-w-[900px]">
           <Heading admin>
-            <NewTicket people={people} />
+            <NewTicket people={people} filer={null} />
           </Heading>
           <div className="mt-5 flex flex-wrap items-center gap-2">
             {STATUS_FILTERS.map((option) => (
@@ -137,13 +139,14 @@ export default async function SupportPage({ searchParams }: PageProps) {
       );
     }
     tickets = await listSupportTicketsFor(viewer.id);
+    filer = await filerName(viewer);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : 'Could not read the tickets.';
   }
 
   return (
     <div className="mx-auto w-full max-w-[900px]">
-      <Heading admin={admin}>{admin ? null : <NewTicket people={null} />}</Heading>
+      <Heading admin={admin}>{admin ? null : <NewTicket people={null} filer={filer} />}</Heading>
       {error ? (
         <div className="mt-5">
           <ErrorPanel title="Could not read the tickets" message={error} hint="" />
@@ -153,6 +156,17 @@ export default async function SupportPage({ searchParams }: PageProps) {
       )}
     </div>
   );
+}
+
+/**
+ * Who a ticket opened from this session is filed as: the signed-in affiliate,
+ * by their full name when there is one. From Client View it names the admin
+ * behind it as well, the way the ticket's own record will.
+ */
+async function filerName(viewer: { id: string; username: string; actingAs: { adminName: string } | null }): Promise<string> {
+  const account = await findUserById(viewer.id).catch(() => null);
+  const name = account?.fullName ? `${account.fullName} (${viewer.username})` : viewer.username;
+  return viewer.actingAs ? `${name}, via ${viewer.actingAs.adminName}` : name;
 }
 
 function Heading({ admin, children }: { admin: boolean; children: React.ReactNode }) {

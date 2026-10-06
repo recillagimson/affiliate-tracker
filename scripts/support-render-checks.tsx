@@ -19,8 +19,9 @@ import {
 import { NewTicket } from '../src/components/NewTicket';
 import { SupportList } from '../src/components/SupportList';
 import { SupportMessages, SupportThread } from '../src/components/SupportThread';
-import { checkPicked, failureText, openedNotice } from '../src/lib/support-client';
-import { MAX_ATTACHMENT_BYTES, type SupportMessage, type SupportRow } from '../src/lib/support';
+import { addPicked, checkPicked, failureText, openedNotice } from '../src/lib/support-client';
+import { AttachmentPicker } from '../src/components/AttachmentPicker';
+import { MAX_FILE_BYTES, type SupportMessage, type SupportRow } from '../src/lib/support';
 
 let pass = 0;
 let fail = 0;
@@ -68,18 +69,36 @@ const emptyMine = render(<SupportList rows={[]} admin={false} />);
 check('an empty affiliate list invites a first one', emptyMine.includes('New ticket') || emptyMine.includes('new ticket'));
 
 console.log('- a new ticket -');
-const mineForm = render(<NewTicket people={null} />);
+const mineForm = render(<NewTicket people={null} filer="Maria Santos" />);
 check('there is a button to open one', mineForm.includes('New ticket'));
 check('an affiliate is not asked who it is for', !mineForm.includes('name="userId"'));
 check('all four categories are offered', ['Question', 'Payout issue', 'Bug', 'Feedback'].every((label) => mineForm.includes(label)));
-check('images only', mineForm.includes('image/png,image/jpeg,image/webp'));
-const adminForm = render(<NewTicket people={[{ id: 'u1', name: 'Maria Santos' }]} />);
+check('it says who is filing it', mineForm.includes('Filing as') && mineForm.includes('Maria Santos'));
+check('images, video and PDF can be attached', mineForm.includes('image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm,application/pdf'));
+const adminForm = render(<NewTicket people={[{ id: 'u1', name: 'Maria Santos' }]} filer={null} />);
 check('an admin chooses who it is for', adminForm.includes('name="userId"') && adminForm.includes('Maria Santos'));
+
+check('an admin is not told they are filing as anybody', !adminForm.includes('Filing as'));
+
+console.log('- attaching files -');
+const emptyPicker = render(<AttachmentPicker files={[]} onChange={() => {}} />);
+check('it invites a drop, a paste or a browse', emptyPicker.includes('Drag files here') && emptyPicker.includes('paste') && emptyPicker.includes('Browse'));
+check('it says what can be attached', emptyPicker.includes('50 MB') && emptyPicker.includes('5 files'));
+const shot = new File([new Uint8Array(2048)], 'shot.png', { type: 'image/png' });
+const clip = new File([new Uint8Array(3 * 1024 * 1024)], 'clip.mp4', { type: 'video/mp4' });
+const fullPicker = render(<AttachmentPicker files={[shot, clip]} onChange={() => {}} progress={[100, 40]} />);
+check('each chosen file is listed by name', fullPicker.includes('shot.png') && fullPicker.includes('clip.mp4'));
+check('with its size', fullPicker.includes('2 KB') && fullPicker.includes('3.0 MB'));
+check('and a way to take it off', fullPicker.split('Remove ').length === 3);
+check('how many are chosen is counted', fullPicker.includes('2 of 5'));
+check('an upload under way shows how far it is', fullPicker.includes('aria-valuenow="40"'));
+const busyPicker = render(<AttachmentPicker files={[shot]} onChange={() => {}} disabled />);
+check('nothing can be removed while it is sending', !busyPicker.includes('Remove '));
 
 console.log('- a conversation -');
 const messages: SupportMessage[] = [
   { id: '1', authorRole: 'affiliate', authorId: 'u1', authorName: 'maria', body: 'It is late.\nPlease check.', createdAt: '2026-10-01T10:00:00.000Z', attachments: [{ id: '5', name: 'shot.png', type: 'image/png', size: 2000 }] },
-  { id: '2', authorRole: 'admin', authorId: 'a1', authorName: 'gimson', body: '<script>alert(1)</script>', createdAt: '2026-10-01T11:00:00.000Z', attachments: [] },
+  { id: '2', authorRole: 'admin', authorId: 'a1', authorName: 'gimson', body: '<script>alert(1)</script>', createdAt: '2026-10-01T11:00:00.000Z', attachments: [{ id: '6', name: 'clip.mp4', type: 'video/mp4', size: 3_000_000 }, { id: '7', name: 'statement.pdf', type: 'application/pdf', size: 90_000 }] },
 ];
 const talk = render(<SupportMessages messages={messages} side="affiliate" />);
 check('both messages are there', talk.includes('It is late.') && talk.includes('alert(1)'));
@@ -87,6 +106,10 @@ check('who wrote each is shown', talk.includes('maria') && talk.includes('gimson
 check('a message body never reaches the page as markup', !talk.includes('<script>'));
 check('line breaks are kept', talk.includes('whitespace-pre-wrap'));
 check('an image opens through the signed-in route', talk.includes('/api/support/attachments/5'));
+check('an image is drawn', /<img[^>]*\/api\/support\/attachments\/5/.test(talk));
+check('a video is played, not drawn', /<video[^>]*controls/.test(talk) && talk.includes('/api/support/attachments/6'));
+check('a video does not load until it is played', talk.includes('preload="metadata"'));
+check('a PDF is a named link', />[^<]*statement\.pdf/.test(talk) && talk.includes('/api/support/attachments/7'));
 check('the affiliate\'s own message is marked as theirs', /data-mine="true"[\s\S]*It is late/.test(talk));
 check('support is named as support to an affiliate', talk.includes('Support'));
 
@@ -105,10 +128,13 @@ check('and still replied to, which reopens it', closed.includes('Send reply') &&
 
 console.log('- before it is sent -');
 check('no files is fine', checkPicked([]) === '');
-check('three small images are fine', checkPicked([{ size: 10, type: 'image/png' }, { size: 10, type: 'image/jpeg' }, { size: 10, type: 'image/webp' }]) === '');
-check('four is refused', checkPicked(Array.from({ length: 4 }, () => ({ size: 10, type: 'image/png' }))) !== '');
-check('a PDF is refused', checkPicked([{ size: 10, type: 'application/pdf' }]) !== '');
-check('too much together is refused', checkPicked([{ size: MAX_ATTACHMENT_BYTES, type: 'image/png' }, { size: 1, type: 'image/png' }]) !== '');
+check('images, a video and a PDF are fine', checkPicked([{ size: 10, type: 'image/png' }, { size: 10, type: 'video/mp4' }, { size: 10, type: 'application/pdf' }]) === '');
+check('six is refused', checkPicked(Array.from({ length: 6 }, () => ({ size: 10, type: 'image/png' }))) !== '');
+check('a spreadsheet is refused', checkPicked([{ size: 10, type: 'text/csv' }]) !== '');
+check('a file the browser cannot name the type of is refused', checkPicked([{ size: 10, type: '' }]) !== '');
+check('a file over the limit is refused', checkPicked([{ size: MAX_FILE_BYTES + 1, type: 'video/mp4' }]) !== '');
+check('one at the limit is fine', checkPicked([{ size: MAX_FILE_BYTES, type: 'video/mp4' }]) === '');
+check('adding keeps what was there and drops exact repeats', addPicked([shot], [shot, clip]).length === 2);
 // Review focus 4: a body the host refuses arrives as a sentence.
 check('a 413 from the host is explained', failureText(413, {}).includes('too large'));
 check('a refusal says what the route said', failureText(400, { error: 'Write a message first.' }) === 'Write a message first.');

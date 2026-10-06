@@ -17,14 +17,17 @@
 
 import { asBody, readRowId, requestedByFor, textField, type Refusal } from './payout-api';
 import {
-  checkSupportAttachments,
+  checkAttachmentRefs,
+  checkUploadRequest,
   isSupportCategory,
   MAX_BODY,
   MAX_SUBJECT,
   sideFor,
   type SupportCategory,
   type SupportSide,
-  type SupportUpload,
+  type AttachmentRef,
+  type UploadAsk,
+  uploaderKey,
 } from './support';
 import type { Viewer } from './viewer-core';
 
@@ -32,9 +35,9 @@ export { asBody };
 
 /* ---------------------------------------------------------------- actions --- */
 
-export type SupportAction = 'open' | 'reply' | 'close' | 'reopen' | 'read';
+export type SupportAction = 'open' | 'reply' | 'close' | 'reopen' | 'read' | 'upload';
 
-const ACTIONS: readonly SupportAction[] = ['open', 'reply', 'close', 'reopen', 'read'];
+const ACTIONS: readonly SupportAction[] = ['open', 'reply', 'close', 'reopen', 'read', 'upload'];
 
 export function readSupportAction(value: unknown): SupportAction | null {
   return typeof value === 'string' && (ACTIONS as readonly string[]).includes(value)
@@ -94,13 +97,54 @@ function readMessage(body: Record<string, unknown>): { ok: true; text: string } 
   return { ok: true, text };
 }
 
-function readFiles(body: Record<string, unknown>): { ok: true; files: SupportUpload[] } | { ok: false; refusal: Refusal } {
-  const result = checkSupportAttachments(body.attachments);
-  if (result.ok) return { ok: true, files: result.files };
+/**
+ * The uploaded files a message says it carries. Only paths inside the
+ * sender's own upload folder are accepted; the route then reads each one back
+ * from storage before anything is written.
+ */
+function readRefs(
+  body: Record<string, unknown>,
+  viewer: Pick<Viewer, 'id'>,
+): { ok: true; refs: AttachmentRef[] } | { ok: false; refusal: Refusal } {
+  const result = checkAttachmentRefs(body.attachments, uploaderKey(viewer.id));
+  if (result.ok) return { ok: true, refs: result.refs };
   return {
     ok: false,
     refusal: { status: 400, error: result.error, hint: result.hint, fields: { attachments: result.error } },
   };
+}
+
+/* -------------------------------------------------------------- uploading --- */
+
+export type UploadInput = { key: string; files: UploadAsk[] };
+
+/**
+ * A request for somewhere to upload files to.
+ *
+ * Checked before a single byte moves, so somebody who picked a file that
+ * cannot be attached is told at once. The folder is the viewer's own, from
+ * the session.
+ */
+export function readUpload(
+  body: Record<string, unknown>,
+  viewer: Pick<Viewer, 'id'>,
+): { ok: true; value: UploadInput } | { ok: false; refusal: Refusal } {
+  const key = uploaderKey(viewer.id);
+  if (!key) return { ok: false, refusal: { status: 403, error: 'This account cannot attach files.' } };
+  const result = checkUploadRequest(body.files);
+  if (!result.ok) {
+    return {
+      ok: false,
+      refusal: { status: 400, error: result.error, hint: result.hint, fields: { attachments: result.error } },
+    };
+  }
+  return { ok: true, value: { key, files: result.files } };
+}
+
+/** A message named a file that is not in storage: the upload never finished, or it is not a file we attach. */
+export function missingUpload(): Refusal {
+  const error = 'One of those files did not finish uploading.';
+  return { status: 400, error, hint: 'Attach it again and send.', fields: { attachments: error } };
 }
 
 /* ---------------------------------------------------------------- opening --- */
@@ -110,7 +154,7 @@ export type OpenInput = {
   subject: string;
   category: SupportCategory;
   body: string;
-  files: SupportUpload[];
+  refs: AttachmentRef[];
 };
 
 /**
@@ -142,29 +186,30 @@ export function readOpen(
   }
   const message = readMessage(body);
   if (!message.ok) return message;
-  const files = readFiles(body);
+  const files = readRefs(body, viewer);
   if (!files.ok) return files;
 
   return {
     ok: true,
-    value: { userId, subject: subject.text, category, body: message.text, files: files.files },
+    value: { userId, subject: subject.text, category, body: message.text, refs: files.refs },
   };
 }
 
 /* --------------------------------------------------------------- replying --- */
 
-export type ReplyInput = { ticketId: string; body: string; files: SupportUpload[] };
+export type ReplyInput = { ticketId: string; body: string; refs: AttachmentRef[] };
 
 export function readReply(
   body: Record<string, unknown>,
+  viewer: Pick<Viewer, 'id'>,
 ): { ok: true; value: ReplyInput } | { ok: false; refusal: Refusal } {
   const id = readTicketId(body.ticketId);
   if (!id.ok) return id;
   const message = readMessage(body);
   if (!message.ok) return message;
-  const files = readFiles(body);
+  const files = readRefs(body, viewer);
   if (!files.ok) return files;
-  return { ok: true, value: { ticketId: id.id, body: message.text, files: files.files } };
+  return { ok: true, value: { ticketId: id.id, body: message.text, refs: files.refs } };
 }
 
 /* ------------------------------------------------------------- the viewer --- */
@@ -207,9 +252,12 @@ export function shouldMarkRead(viewer: Pick<Viewer, 'actingAs'>): boolean {
 const HOUR = 3_600_000;
 
 /** How much one affiliate may send. Admins are not limited. */
-export const SUPPORT_LIMITS: Record<'open' | 'reply', { limit: number; windowMs: number }> = {
+export const SUPPORT_LIMITS: Record<'open' | 'reply' | 'upload', { limit: number; windowMs: number }> = {
   open: { limit: 5, windowMs: HOUR },
   reply: { limit: 30, windowMs: HOUR },
+  // Counted per request for somewhere to upload, not per file. Enough for
+  // every message above to carry files and a few retries besides.
+  upload: { limit: 60, windowMs: HOUR },
 };
 
 /**

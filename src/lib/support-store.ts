@@ -17,9 +17,11 @@
  *     last-message fields" as two calls could leave a reply nobody is badged
  *     for. One RPC is one transaction.
  *   - Marking read is a function too, so the time is the database's own.
- *   - The image bytes are never selected by a list or a thread read.
- *     readSupportAttachmentFile is the one query that touches them, and a
- *     route calls it only after it knows the caller may see them.
+ *   - The files themselves are not here at all. They sit in a private storage
+ *     bucket, uploaded straight from the browser through a signed URL this
+ *     file issues, and the table keeps only each one's path. A page gets a
+ *     short-lived link from signSupportAttachment, and a route calls that
+ *     only after it knows the caller may see the file.
  *   - A ticket id is a small sequential number anybody can guess. So a read
  *     on an affiliate's behalf puts their user id into the query itself, and
  *     a ticket that is not theirs is never fetched rather than fetched and
@@ -34,10 +36,13 @@ import {
 import { getSupabaseClient, isSupabaseConfigured } from './store/supabase';
 import {
   isSupportCategory,
+  isSupportFileType,
   isSupportStatus,
+  SUPPORT_BUCKET,
   countsTowardBadge,
   type SupportAttachmentMeta,
   type SupportCategory,
+  type SupportFileType,
   type SupportMessage,
   type SupportSide,
   type SupportStatus,
@@ -303,42 +308,88 @@ export async function readSupportAttachmentTicket(attachmentId: string): Promise
     .select('id, ticket_id')
     .eq('id', attachmentId)
     .maybeSingle();
-  if (error) supportFailure('reading which ticket an image belongs to', error);
+  if (error) supportFailure('reading which ticket an attachment belongs to', error);
   const row = data as Record<string, unknown> | null;
   return row ? String(row.ticket_id ?? '') : null;
 }
 
-/**
- * The image itself.
- *
- * The only query in this file that touches the bytes. Call it only once the
- * caller is known to be allowed.
- */
+/** One attachment's name, type and place in storage. Call it only once the caller is known to be allowed. */
 export async function readSupportAttachmentFile(
   attachmentId: string,
-): Promise<{ name: string; type: string; data: string } | null> {
+): Promise<{ name: string; type: string; path: string } | null> {
   requireStore();
   if (!isRowId(attachmentId)) return null;
   const { data, error } = await getSupabaseClient()
     .from('support_attachments')
-    .select('name, type, data')
+    .select('name, type, path')
     .eq('id', attachmentId)
     .maybeSingle();
-  if (error) supportFailure('reading a support image', error);
+  if (error) supportFailure('reading a support attachment', error);
   const row = data as Record<string, unknown> | null;
-  const content = String(row?.data ?? '');
-  if (!row || !content) return null;
-  return {
-    name: String(row.name ?? 'image'),
-    type: String(row.type ?? 'application/octet-stream'),
-    data: content,
-  };
+  const path = String(row?.path ?? '');
+  if (!row || !path) return null;
+  return { name: String(row.name ?? 'file'), type: String(row.type ?? ''), path };
+}
+
+/* ---------------------------------------------------------------- storage --- */
+
+type StorageErrorish = { message?: string; statusCode?: string | number; status?: number } | null;
+
+/** A storage failure, as a sentence. A missing bucket is the migration not having been run. */
+function storageFailure(context: string, error: StorageErrorish): never {
+  const message = error?.message ?? 'unknown error';
+  if (/bucket not found/i.test(message)) {
+    throw new StoreConfigError(
+      'The support attachments bucket is missing from this Supabase project. Run the 20261007120000_support_attachment_storage migration.',
+    );
+  }
+  throw new Error(`${context}: ${message}`);
+}
+
+/**
+ * Somewhere for the browser to put one file: a URL that accepts a single
+ * upload to exactly this path, for two hours, and nothing else. The bucket
+ * itself enforces the size and the type.
+ */
+export async function createSupportUpload(path: string): Promise<string> {
+  requireStore();
+  const { data, error } = await getSupabaseClient().storage.from(SUPPORT_BUCKET).createSignedUploadUrl(path);
+  if (error || !data?.signedUrl) storageFailure('preparing an upload', error);
+  return data.signedUrl;
+}
+
+/**
+ * What is actually at a path, read back from storage: its real size and the
+ * type it was stored as. Null when nothing is there, which is an upload that
+ * never finished, or a type this app does not attach.
+ */
+export async function statSupportUpload(
+  path: string,
+): Promise<{ size: number; type: SupportFileType } | null> {
+  requireStore();
+  const { data, error } = await getSupabaseClient().storage.from(SUPPORT_BUCKET).info(path);
+  if (error) {
+    if (/not found/i.test(error.message ?? '') && !/bucket/i.test(error.message ?? '')) return null;
+    storageFailure('checking an upload', error);
+  }
+  const type = data?.contentType ?? '';
+  const size = Number(data?.size ?? 0);
+  if (!isSupportFileType(type) || !Number.isFinite(size) || size <= 0) return null;
+  return { size, type };
+}
+
+/** A link that opens one stored file, for a short while. */
+export async function signSupportAttachment(path: string, seconds: number): Promise<string> {
+  requireStore();
+  const { data, error } = await getSupabaseClient().storage.from(SUPPORT_BUCKET).createSignedUrl(path, seconds);
+  if (error || !data?.signedUrl) storageFailure('opening a support attachment', error);
+  return data.signedUrl;
 }
 
 /* ----------------------------------------------------------------- writes --- */
 
 function filesForRpc(files: SupportUpload[]): Record<string, unknown>[] {
-  return files.map((file) => ({ name: file.name, type: file.type, size: file.size, data: file.data }));
+  return files.map((file) => ({ name: file.name, type: file.type, size: file.size, path: file.path }));
 }
 
 function idFrom(context: string, data: unknown): string {
