@@ -153,6 +153,22 @@ export function unreadCount(
   return tickets.filter((ticket) => isUnreadFor(ticket, side)).length;
 }
 
+/**
+ * Whether a ticket adds to this side's badge.
+ *
+ * For admins, only while it is open. An affiliate who says thanks and closes
+ * the ticket leaves a message no admin has read, but the admin list opens on
+ * Open, so a badge for it would point at a page showing nothing unread. The
+ * affiliate's list shows every ticket, so theirs counts whatever its status.
+ */
+export function countsTowardBadge(
+  ticket: Pick<SupportTicket, 'status' | 'lastMessageRole' | 'lastMessageAt' | 'affiliateReadAt' | 'adminReadAt'>,
+  side: SupportSide,
+): boolean {
+  if (side === 'admin' && ticket.status !== 'open') return false;
+  return isUnreadFor(ticket, side);
+}
+
 /** What the tab's badge says. Nothing at all for zero. */
 export function badgeText(count: number): string {
   if (!Number.isFinite(count) || count <= 0) return '';

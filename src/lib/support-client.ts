@@ -76,6 +76,20 @@ export async function postSupport(
   return { ok: true, payload };
 }
 
+/**
+ * What an admin has to be told after opening a ticket, or '' when there is
+ * nothing to say. Pure.
+ *
+ * Opening one normally goes straight to the conversation. When the affiliate
+ * could not be emailed, that is the one thing the admin needs to know before
+ * moving on, because otherwise they believe somebody was told who was not.
+ */
+export function openedNotice(payload: Record<string, unknown>): string {
+  if (payload.emailed !== false) return '';
+  const why = typeof payload.emailProblem === 'string' ? payload.emailProblem.trim() : '';
+  return why ? `Ticket opened. No email went: ${why}` : 'Ticket opened. No email went.';
+}
+
 /** What to add to a success message about the email, if the route said anything. */
 export function emailNote(payload: Record<string, unknown>): string {
   if (payload.emailed === true) return ' They have been emailed.';

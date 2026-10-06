@@ -19,7 +19,7 @@ import {
 import { NewTicket } from '../src/components/NewTicket';
 import { SupportList } from '../src/components/SupportList';
 import { SupportMessages, SupportThread } from '../src/components/SupportThread';
-import { checkPicked, failureText } from '../src/lib/support-client';
+import { checkPicked, failureText, openedNotice } from '../src/lib/support-client';
 import { MAX_ATTACHMENT_BYTES, type SupportMessage, type SupportRow } from '../src/lib/support';
 
 let pass = 0;
@@ -114,6 +114,12 @@ check('a 413 from the host is explained', failureText(413, {}).includes('too lar
 check('a refusal says what the route said', failureText(400, { error: 'Write a message first.' }) === 'Write a message first.');
 check('with its hint', failureText(409, { error: 'That ticket is already closed.', hint: 'Reload the page to see it.' }) === 'That ticket is already closed. Reload the page to see it.');
 check('anything else names the status', failureText(500, {}).includes('500'));
+
+console.log('- after a ticket is opened -');
+check('an affiliate\'s own ticket has nothing to add', openedNotice({ ok: true, ticketId: '12' }) === '');
+check('an emailed one has nothing to add either', openedNotice({ emailed: true }) === '');
+check('one that could not be emailed says so, and why', openedNotice({ emailed: false, emailProblem: 'They have no email address on file, so no email was sent.' }) === 'Ticket opened. No email went: They have no email address on file, so no email was sent.');
+check('even when no reason came back', openedNotice({ emailed: false }) === 'Ticket opened. No email went.');
 
 console.log('- house rules -');
 check('there was something to read', rendered.length > 8, rendered.length);

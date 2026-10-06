@@ -35,7 +35,7 @@ import { getSupabaseClient, isSupabaseConfigured } from './store/supabase';
 import {
   isSupportCategory,
   isSupportStatus,
-  isUnreadFor,
+  countsTowardBadge,
   type SupportAttachmentMeta,
   type SupportCategory,
   type SupportMessage,
@@ -276,8 +276,8 @@ export async function readSupportThread(
  *
  * Postgres cannot be asked "read_at < last_message_at" through PostgREST's
  * filters, so this narrows to the tickets where the other side spoke last,
- * reads four small columns of each, and counts with the same isUnreadFor the
- * list uses. One rule, in one place.
+ * reads five small columns of each, and counts with countsTowardBadge, which
+ * is the list's own isUnreadFor plus the one rule about closed tickets.
  */
 export async function countUnreadSupport(side: SupportSide, userId?: string): Promise<number> {
   requireStore();
@@ -286,12 +286,12 @@ export async function countUnreadSupport(side: SupportSide, userId?: string): Pr
   const rows = await readPages('counting unread support tickets', (from, to) => {
     let query = getSupabaseClient()
       .from('support_tickets')
-      .select('id, last_message_at, last_message_role, affiliate_read_at, admin_read_at')
+      .select('id, status, last_message_at, last_message_role, affiliate_read_at, admin_read_at')
       .eq('last_message_role', other);
     if (side === 'affiliate') query = query.eq('user_id', userId ?? '');
     return query.order('id', { ascending: true }).range(from, to);
   });
-  return rows.map(toTicket).filter((ticket) => isUnreadFor(ticket, side)).length;
+  return rows.map(toTicket).filter((ticket) => countsTowardBadge(ticket, side)).length;
 }
 
 /** Which ticket an attachment belongs to, and nothing else. */

@@ -10,6 +10,7 @@
 
 import {
   badgeText,
+  countsTowardBadge,
   buildSupportRows,
   CATEGORY_LABELS,
   categoryFilterFrom,
@@ -108,6 +109,13 @@ check(
 );
 check('counting', unreadCount([ticket(), replied, ticket({ id: '9' })], 'admin') === 2);
 check('counting nothing', unreadCount([], 'affiliate') === 0);
+
+console.log('- what the badge counts -');
+const thanked = ticket({ status: 'closed', closedAt: '2026-10-01T10:01:00.000Z' });
+check('an open unread ticket counts for admins', countsTowardBadge(ticket(), 'admin'));
+check('one the affiliate closed behind their last message does not: the admin list opens on Open and would show nothing', !countsTowardBadge(thanked, 'admin'));
+check('a closed ticket with an unread reply still counts for the affiliate, whose list shows everything', countsTowardBadge({ ...replied, status: 'closed' }, 'affiliate'));
+check('a read ticket counts for nobody', !countsTowardBadge(ticket(), 'affiliate'));
 
 console.log('- what the list says -');
 check('waiting on support, for both sides', waitingLabel(ticket(), 'admin') === heard('Waiting on support'));

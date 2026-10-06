@@ -212,8 +212,13 @@ export const SUPPORT_LIMITS: Record<'open' | 'reply', { limit: number; windowMs:
   reply: { limit: 30, windowMs: HOUR },
 };
 
-export function throttleApplies(viewer: Pick<Viewer, 'role'>): boolean {
-  return sideFor(viewer) === 'affiliate';
+/**
+ * Not from Client View either. The viewer there is the affiliate, and the
+ * limit is counted against the affiliate's id, so an admin working through a
+ * backlog as them would use up the allowance the affiliate needs to reply.
+ */
+export function throttleApplies(viewer: Pick<Viewer, 'role' | 'actingAs'>): boolean {
+  return sideFor(viewer) === 'affiliate' && viewer.actingAs === null;
 }
 
 export function tooMany(): Refusal {

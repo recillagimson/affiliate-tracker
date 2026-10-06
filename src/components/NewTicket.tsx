@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Modal } from '@/components/Modal';
@@ -11,7 +12,7 @@ import {
   SUPPORT_IMAGE_TYPES,
   type SupportCategory,
 } from '@/lib/support';
-import { postSupport, readImages } from '@/lib/support-client';
+import { openedNotice, postSupport, readImages } from '@/lib/support-client';
 
 /**
  * Opening a ticket.
@@ -35,6 +36,8 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [problems, setProblems] = useState<Record<string, string>>({});
+  /** Set when a ticket was opened but the affiliate could not be emailed. */
+  const [opened, setOpened] = useState<{ id: string; notice: string } | null>(null);
 
   async function send() {
     if (busy) return;
@@ -60,8 +63,20 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
         setProblems(result.fields);
         return;
       }
+      const id = String(result.payload.ticketId ?? '');
+      const notice = openedNotice(result.payload);
+      if (notice) {
+        // Stay, and say so. The ticket is saved; what did not happen is the
+        // email, and the admin should hear that before they move on.
+        setOpened({ id, notice });
+        setSubject('');
+        setBody('');
+        setFiles([]);
+        router.refresh();
+        return;
+      }
       setOpen(false);
-      router.push(`/support/${String(result.payload.ticketId ?? '')}`);
+      router.push(`/support/${id}`);
       router.refresh();
     } finally {
       setBusy(false);
@@ -74,7 +89,24 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
         New ticket
       </button>
 
-      <Modal open={open} title="New ticket" onClose={() => setOpen(false)}>
+      <Modal
+        open={open}
+        title="New ticket"
+        onClose={() => {
+          setOpen(false);
+          setOpened(null);
+        }}
+      >
+        {opened ? (
+          <div className="mt-5 space-y-4">
+            <p role="status" className="text-[14px] leading-relaxed text-ink">
+              {opened.notice}
+            </p>
+            <Link href={`/support/${opened.id}`} className="btn-primary">
+              Open the conversation
+            </Link>
+          </div>
+        ) : (
         <form
           className="mt-5 space-y-4"
           onSubmit={(event) => {
@@ -169,6 +201,7 @@ export function NewTicket({ people }: { people: { id: string; name: string }[] |
             </button>
           </div>
         </form>
+        )}
       </Modal>
     </>
   );

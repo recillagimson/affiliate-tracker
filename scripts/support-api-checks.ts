@@ -127,8 +127,9 @@ check('opening it from Client View does not', !shouldMarkRead({ actingAs: { admi
 console.log('- limits -');
 check('five tickets an hour', SUPPORT_LIMITS.open.limit === 5 && SUPPORT_LIMITS.open.windowMs === 3_600_000);
 check('thirty replies an hour', SUPPORT_LIMITS.reply.limit === 30 && SUPPORT_LIMITS.reply.windowMs === 3_600_000);
-check('affiliates are throttled', throttleApplies({ role: 'affiliate' }));
-check('admins are not', !throttleApplies({ role: 'admin' }));
+check('affiliates are throttled', throttleApplies({ role: 'affiliate', actingAs: null }));
+check('admins are not', !throttleApplies({ role: 'admin', actingAs: null }));
+check('nor an admin writing from Client View, who would otherwise spend the affiliate\'s allowance', !throttleApplies({ role: 'affiliate', actingAs: { adminId: 'a1', adminName: 'Gimson' } }));
 check('too many is a 429', tooMany().status === 429);
 note(tooMany());
 check('closing a closed ticket is a 409', alreadyRefusal('close').status === 409);
