@@ -62,7 +62,7 @@ export function SupportList({ rows, admin }: { rows: SupportRow[]; admin: boolea
                   {row.category} · {formatDateTime(row.lastAt)}
                 </span>
               </span>
-              <span className={`chip ${row.status === 'closed' ? 'chip-quiet' : row.unread ? 'chip-gold' : 'chip-live'}`}>
+              <span className={`chip ${row.status === 'closed' ? 'chip-quiet' : row.status === 'resolved' ? 'chip-live' : 'chip-gold'}`}>
                 {row.waiting}
               </span>
             </Link>

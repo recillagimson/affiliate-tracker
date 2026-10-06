@@ -29,6 +29,7 @@ import {
   readSupportAction,
   readTicketId,
   readUpload,
+  resolveRefusal,
   shouldMarkRead,
   SUPPORT_LIMITS,
   throttleApplies,
@@ -42,6 +43,7 @@ import {
   openSupportTicket,
   readSupportTicket,
   reopenSupportTicket,
+  resolveSupportTicket,
   statSupportUpload,
 } from '@/lib/support-store';
 import { findUserById } from '@/lib/users';
@@ -49,8 +51,8 @@ import { findUserById } from '@/lib/users';
 /**
  * Everything somebody does to a support ticket.
  *
- * Six actions on one POST: `open` a ticket, `reply` on one, `close` it,
- * `reopen` it, mark it `read`, and `upload`, which hands back somewhere to put
+ * Seven actions on one POST: `open` a ticket, `reply` on one, `close` it,
+ * `resolve` it (admins only), `reopen` it, mark it `read`, and `upload`, which hands back somewhere to put
  * files. Both sides use the same route. Which side
  * the caller is on, and which tickets they may touch, comes from the session
  * and nothing else: an affiliate's user id goes into every query, so somebody
@@ -96,7 +98,7 @@ export async function POST(request: Request) {
 
   const action = readSupportAction(body.action);
   if (!action) {
-    return refuse({ status: 400, error: 'No such action.', hint: 'Expected open, reply, close, reopen, read or upload.' });
+    return refuse({ status: 400, error: 'No such action.', hint: 'Expected open, reply, close, resolve, reopen, read or upload.' });
   }
 
   const origin = originFromHeaders(request.headers, configuredBaseUrl());
@@ -228,8 +230,12 @@ async function reply(viewer: Viewer, body: Record<string, unknown>, origin: stri
 async function move(
   viewer: Viewer,
   body: Record<string, unknown>,
-  action: 'close' | 'reopen',
+  action: 'close' | 'resolve' | 'reopen',
 ): Promise<NextResponse> {
+  if (action === 'resolve') {
+    const refused = resolveRefusal(viewer);
+    if (refused) return refuse(refused);
+  }
   const id = readTicketId(body.ticketId);
   if (!id.ok) return refuse(id.refusal);
 
@@ -237,10 +243,13 @@ async function move(
   const ticket = await readSupportTicket(id.id, owner);
   if (!ticket) return refuse(noSuchTicket());
 
+  const by = authorFor(viewer).name;
   const done =
     action === 'close'
-      ? await closeSupportTicket(ticket.id, authorFor(viewer).name, owner)
-      : await reopenSupportTicket(ticket.id, owner);
+      ? await closeSupportTicket(ticket.id, by, owner)
+      : action === 'resolve'
+        ? await resolveSupportTicket(ticket.id, by)
+        : await reopenSupportTicket(ticket.id, owner);
   if (!done) return refuse(alreadyRefusal(action));
   return NextResponse.json({ ok: true, ticketId: ticket.id });
 }

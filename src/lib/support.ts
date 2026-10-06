@@ -30,7 +30,13 @@ export const CATEGORY_LABELS: Record<SupportCategory, string> = {
   feedback: 'Feedback',
 };
 
-export const SUPPORT_STATUSES = ['open', 'closed'] as const;
+/**
+ * Open while it is being worked on. Resolved when an admin has dealt with it.
+ * Closed when it ended without that, usually because the affiliate closed it.
+ * The same three, in the same order, as the check constraint in the
+ * 20261008120000 migration.
+ */
+export const SUPPORT_STATUSES = ['open', 'resolved', 'closed'] as const;
 export type SupportStatus = (typeof SUPPORT_STATUSES)[number];
 
 /** Which half of the conversation somebody is on. */
@@ -218,6 +224,7 @@ export function waitingLabel(
   ticket: Pick<SupportTicket, 'status' | 'lastMessageRole'>,
   side: SupportSide,
 ): string {
+  if (ticket.status === 'resolved') return 'Resolved';
   if (ticket.status === 'closed') return 'Closed';
   if (ticket.lastMessageRole === 'affiliate') return 'Waiting on support';
   return side === 'affiliate' ? 'Waiting on you' : 'Waiting on affiliate';
@@ -260,7 +267,7 @@ export type StatusFilter = SupportStatus | 'all';
 /** Open unless the URL says otherwise: the open ones are the work. */
 export function statusFilterFrom(value: unknown): StatusFilter {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return text === 'closed' || text === 'all' ? text : 'open';
+  return text === 'resolved' || text === 'closed' || text === 'all' ? text : 'open';
 }
 
 export function categoryFilterFrom(value: unknown): SupportCategory | '' {

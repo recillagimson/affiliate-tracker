@@ -54,6 +54,12 @@ the interface calls the thing.
   the last message is from the affiliate. When it is from an admin, admins
   see "Waiting on affiliate" and the affiliate sees "Waiting on you".
 
+- Revised 2026-10-07: a third status, `resolved`. An admin ends an open
+  ticket with "Mark as resolved"; an affiliate ends one with "Close ticket"
+  (`closed`). Only admins may resolve. Either can be reopened, and a reply
+  reopens either. `closed_at` and `closed_by` record both ways of ending.
+  Migration `20261008120000_support_resolved.sql`.
+
 ### Messages
 
 - Body is 1 to 5,000 characters of plain text, shown with line breaks kept

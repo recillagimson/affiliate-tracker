@@ -32,6 +32,7 @@ function first(value: string | string[] | undefined): string | undefined {
 
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'open', label: 'Open' },
+  { key: 'resolved', label: 'Resolved' },
   { key: 'closed', label: 'Closed' },
   { key: 'all', label: 'All' },
 ];

@@ -125,6 +125,16 @@ const closed = render(
 check('a closed ticket can be reopened', closed.includes('Reopen ticket'));
 check('and not closed again', !closed.includes('Close ticket'));
 check('and still replied to, which reopens it', closed.includes('Send reply') && closed.includes('reopen'));
+const adminOpen = render(
+  <SupportThread ticket={{ id: '12', subject: 'Where is my payout?', category: 'Payout issue', status: 'open' }} messages={messages} side="admin" markRead={false} />,
+);
+check('an admin can mark an open ticket resolved', adminOpen.includes('Mark as resolved'));
+check('an affiliate is not offered that', !open.includes('Mark as resolved'));
+const resolved = render(
+  <SupportThread ticket={{ id: '12', subject: 'Where is my payout?', category: 'Payout issue', status: 'resolved' }} messages={messages} side="admin" markRead={false} />,
+);
+check('a resolved ticket can be reopened, and not resolved again', resolved.includes('Reopen ticket') && !resolved.includes('Mark as resolved') && !resolved.includes('Close ticket'));
+check('and says a reply will reopen it', resolved.includes('resolved') && resolved.includes('reopen'));
 
 console.log('- before it is sent -');
 check('no files is fine', checkPicked([]) === '');

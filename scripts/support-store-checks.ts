@@ -56,11 +56,14 @@ check(
   listIn('support_tickets_category_check').join() === SUPPORT_CATEGORIES.join(),
   listIn('support_tickets_category_check'),
 );
-check(
-  'the statuses too',
-  listIn('support_tickets_status_check').join() === SUPPORT_STATUSES.join(),
-  listIn('support_tickets_status_check'),
-);
+const RESOLVED = join(__dirname, '..', 'supabase', 'migrations', '20261008120000_support_resolved.sql');
+check('the resolved migration exists under its name', existsSync(RESOLVED));
+const resolvedSql = existsSync(RESOLVED) ? readFileSync(RESOLVED, 'utf8') : '';
+const statusAt = resolvedSql.lastIndexOf('constraint support_tickets_status_check');
+const statusList = statusAt === -1 ? [] : [...(/\bin\s*\(([^)]*)\)/.exec(resolvedSql.slice(statusAt, statusAt + 300))?.[1] ?? '').matchAll(/'([^']*)'/g)].map((m) => m[1]!);
+check('the statuses are the same list, in the same order', statusList.join() === SUPPORT_STATUSES.join(), statusList);
+check('a ticket that is not open has a time it stopped being open', /\(status <> 'open'\) = \(closed_at is not null\)/.test(resolvedSql));
+check('it can be run twice', /drop constraint if exists support_tickets_status_check/.test(resolvedSql) && /drop constraint if exists support_tickets_closed_pair_check/.test(resolvedSql));
 
 check('the subject limit is the same number', sql.includes(`between 1 and ${MAX_SUBJECT}`));
 check('the body limit is the same number', sql.includes(`between 1 and ${MAX_BODY}`));

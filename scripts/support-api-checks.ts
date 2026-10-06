@@ -20,6 +20,7 @@ import {
   readSupportAction,
   readTicketId,
   readUpload,
+  resolveRefusal,
   shouldMarkRead,
   SUPPORT_LIMITS,
   throttleApplies,
@@ -48,7 +49,7 @@ const affiliate = { role: 'affiliate' as const, id: 'u1' };
 const admin = { role: 'admin' as const, id: 'a1' };
 
 console.log('- actions -');
-for (const action of ['open', 'reply', 'close', 'reopen', 'read', 'upload']) {
+for (const action of ['open', 'reply', 'close', 'resolve', 'reopen', 'read', 'upload']) {
   check(`${action} is an action`, readSupportAction(action) === action);
 }
 check('nothing else is', readSupportAction('delete') === null && readSupportAction(undefined) === null && readSupportAction(1) === null);
@@ -149,6 +150,11 @@ check('admins are not', !throttleApplies({ role: 'admin', actingAs: null }));
 check('nor an admin writing from Client View, who would otherwise spend the affiliate\'s allowance', !throttleApplies({ role: 'affiliate', actingAs: { adminId: 'a1', adminName: 'Gimson' } }));
 check('too many is a 429', tooMany().status === 429);
 note(tooMany());
+check('an admin may mark a ticket resolved', resolveRefusal({ role: 'admin' }) === null);
+check('an affiliate may not', resolveRefusal({ role: 'affiliate' })?.status === 403);
+note(resolveRefusal({ role: 'affiliate' })!);
+check('resolving one that is not open is a 409', alreadyRefusal('resolve').status === 409);
+note(alreadyRefusal('resolve'));
 check('closing a closed ticket is a 409', alreadyRefusal('close').status === 409);
 check('reopening an open one too', alreadyRefusal('reopen').status === 409);
 check('and they say different things', alreadyRefusal('close').error !== alreadyRefusal('reopen').error);

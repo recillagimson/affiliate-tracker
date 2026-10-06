@@ -73,7 +73,7 @@ export default async function SupportTicketPage({ params }: { params: Promise<{ 
       <div className="rise mt-3">
         <h1 className="font-display text-[24px] leading-[1.1]">{ticket.subject}</h1>
         <p className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-ink-soft">
-          <span className={`chip ${ticket.status === 'closed' ? 'chip-quiet' : 'chip-live'}`}>
+          <span className={`chip ${ticket.status === 'closed' ? 'chip-quiet' : ticket.status === 'resolved' ? 'chip-live' : 'chip-gold'}`}>
             {waitingLabel(ticket, side)}
           </span>
           <span>{CATEGORY_LABELS[ticket.category]}</span>

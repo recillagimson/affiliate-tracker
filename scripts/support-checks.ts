@@ -18,6 +18,8 @@ import {
   checkUploadRequest,
   fileKind,
   isSupportCategory,
+  isSupportStatus,
+  SUPPORT_STATUSES,
   isUnreadFor,
   MAX_ATTACHMENTS,
   MAX_FILE_BYTES,
@@ -128,6 +130,9 @@ check('and the affiliate reads the same', waitingLabel(ticket(), 'affiliate') ==
 check('an admin sees who they are waiting on', waitingLabel(replied, 'admin') === heard('Waiting on affiliate'));
 check('the affiliate is told it is them', waitingLabel(replied, 'affiliate') === heard('Waiting on you'));
 check('a closed ticket is just closed', waitingLabel(ticket({ status: 'closed' }), 'admin') === heard('Closed'));
+check('a resolved ticket says so, to both sides', waitingLabel(ticket({ status: 'resolved' }), 'admin') === heard('Resolved') && waitingLabel(ticket({ status: 'resolved' }), 'affiliate') === 'Resolved');
+check('resolved is a status', isSupportStatus('resolved') && SUPPORT_STATUSES.join() === 'open,resolved,closed');
+check('a resolved ticket does not count toward the admin badge', !countsTowardBadge(ticket({ status: 'resolved' }), 'admin'));
 check('no badge text for nothing', badgeText(0) === '');
 check('a count as itself', badgeText(3) === '3');
 check('capped', badgeText(140) === '99+');
@@ -154,6 +159,7 @@ console.log('- filters -');
 check('open by default', statusFilterFrom(undefined) === 'open');
 check('closed when asked', statusFilterFrom(' Closed ') === 'closed');
 check('all when asked', statusFilterFrom('all') === 'all');
+check('resolved when asked', statusFilterFrom('resolved') === 'resolved');
 check('nonsense falls back to open', statusFilterFrom('x') === 'open');
 check('a category from the URL', categoryFilterFrom('bug') === 'bug');
 check('nonsense is no category', categoryFilterFrom('x') === '' && categoryFilterFrom(undefined) === '');

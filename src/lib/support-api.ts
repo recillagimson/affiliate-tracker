@@ -35,9 +35,9 @@ export { asBody };
 
 /* ---------------------------------------------------------------- actions --- */
 
-export type SupportAction = 'open' | 'reply' | 'close' | 'reopen' | 'read' | 'upload';
+export type SupportAction = 'open' | 'reply' | 'close' | 'resolve' | 'reopen' | 'read' | 'upload';
 
-const ACTIONS: readonly SupportAction[] = ['open', 'reply', 'close', 'reopen', 'read', 'upload'];
+const ACTIONS: readonly SupportAction[] = ['open', 'reply', 'close', 'resolve', 'reopen', 'read', 'upload'];
 
 export function readSupportAction(value: unknown): SupportAction | null {
   return typeof value === 'string' && (ACTIONS as readonly string[]).includes(value)
@@ -279,11 +279,27 @@ export function tooMany(): Refusal {
 
 /* ----------------------------------------------------------------- status --- */
 
-/** A close or reopen that matched nothing, because the ticket was already there. */
-export function alreadyRefusal(action: 'close' | 'reopen'): Refusal {
+/**
+ * Whether this viewer may mark a ticket resolved, or why not.
+ *
+ * Admins only. Resolved is support saying the matter has been dealt with, and
+ * that is not the affiliate's to say about their own question; they have
+ * Close for a ticket they no longer need. An admin in Client View is the
+ * affiliate here, as everywhere, and is refused the same way.
+ */
+export function resolveRefusal(viewer: Pick<Viewer, 'role'>): Refusal | null {
+  return sideFor(viewer) === 'admin'
+    ? null
+    : { status: 403, error: 'Only support can mark a ticket resolved.', hint: 'You can close it instead.' };
+}
+
+/** A close, resolve or reopen that matched nothing, because the ticket was already there. */
+export function alreadyRefusal(action: 'close' | 'resolve' | 'reopen'): Refusal {
+  const hint = 'Reload the page to see it.';
+  if (action === 'reopen') return { status: 409, error: 'That ticket is already open.', hint };
   return action === 'close'
-    ? { status: 409, error: 'That ticket is already closed.', hint: 'Reload the page to see it.' }
-    : { status: 409, error: 'That ticket is already open.', hint: 'Reload the page to see it.' };
+    ? { status: 409, error: 'That ticket is no longer open, so there is nothing to close.', hint }
+    : { status: 409, error: 'That ticket is no longer open, so there is nothing to resolve.', hint };
 }
 
 /* ------------------------------------------------------------------ email --- */

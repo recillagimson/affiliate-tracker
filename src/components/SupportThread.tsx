@@ -99,7 +99,8 @@ export function SupportMessages({ messages, side }: { messages: SupportMessage[]
 }
 
 /**
- * One conversation: its messages, a box to answer in, and Close or Reopen.
+ * One conversation: its messages, a box to answer in, and a way to end it or
+ * reopen it. An admin ends one with Mark as resolved; an affiliate with Close.
  *
  * Opening it tells the route it has been read, once, after it mounts. Not
  * during the server render: a link Next prefetched would then mark a ticket
@@ -173,7 +174,7 @@ export function SupportThread({
     }
   }
 
-  async function move(action: 'close' | 'reopen') {
+  async function move(action: 'close' | 'resolve' | 'reopen') {
     if (busy) return;
     setBusy(true);
     setError('');
@@ -187,7 +188,8 @@ export function SupportThread({
     }
   }
 
-  const closed = ticket.status === 'closed';
+  // Resolved or closed: either way it is no longer open, and a reply reopens it.
+  const ended = ticket.status !== 'open';
 
   return (
     <>
@@ -220,8 +222,10 @@ export function SupportThread({
             onChange={(event) => setBody(event.target.value)}
           />
         </label>
-        {closed ? (
-          <p className="text-[12px] text-ink-soft">This ticket is closed. Sending a reply will reopen it.</p>
+        {ended ? (
+          <p className="text-[12px] text-ink-soft">
+            This ticket is {ticket.status}. Sending a reply will reopen it.
+          </p>
         ) : null}
         <AttachmentPicker files={files} onChange={setFiles} disabled={busy} progress={progress} />
 
@@ -237,9 +241,15 @@ export function SupportThread({
         ) : null}
 
         <div className="flex flex-wrap justify-between gap-2">
-          {closed ? (
+          {ended ? (
             <button type="button" className="btn-outline" disabled={busy} onClick={() => void move('reopen')}>
               Reopen ticket
+            </button>
+          ) : side === 'admin' ? (
+            /* Support's way of ending a ticket: the matter is dealt with.
+               An affiliate gets Close instead, for one they no longer need. */
+            <button type="button" className="btn-gold" disabled={busy} onClick={() => void move('resolve')}>
+              Mark as resolved
             </button>
           ) : (
             <button type="button" className="btn-outline" disabled={busy} onClick={() => void move('close')}>

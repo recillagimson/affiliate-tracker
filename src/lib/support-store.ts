@@ -456,13 +456,15 @@ export async function addSupportMessage(input: {
 async function moveStatus(
   context: string,
   id: string,
-  from: SupportStatus,
+  from: 'open' | 'ended',
   patch: Record<string, unknown>,
   forUserId?: string,
 ): Promise<boolean> {
   requireStore();
   if (!isRowId(id)) return false;
-  let query = getSupabaseClient().from('support_tickets').update(patch).eq('id', id).eq('status', from);
+  const update = getSupabaseClient().from('support_tickets').update(patch).eq('id', id);
+  // 'ended' is either way a ticket stops being open: resolved or closed.
+  let query = from === 'open' ? update.eq('status', 'open') : update.neq('status', 'open');
   if (forUserId !== undefined) query = query.eq('user_id', forUserId);
   const { data, error } = await query.select('id');
   if (error) supportFailure(context, error);
@@ -480,12 +482,21 @@ export async function closeSupportTicket(id: string, closedBy: string, forUserId
   );
 }
 
-/** Reopen a closed ticket. False when it was not closed, or not this person's. */
+/** Mark an open ticket resolved. Admins only, which the route decides. False when it was not open. */
+export async function resolveSupportTicket(id: string, resolvedBy: string): Promise<boolean> {
+  return moveStatus('resolving a support ticket', id, 'open', {
+    status: 'resolved',
+    closed_at: new Date().toISOString(),
+    closed_by: resolvedBy,
+  });
+}
+
+/** Reopen a resolved or closed ticket. False when it was already open, or not this person's. */
 export async function reopenSupportTicket(id: string, forUserId?: string): Promise<boolean> {
   return moveStatus(
     'reopening a support ticket',
     id,
-    'closed',
+    'ended',
     { status: 'open', closed_at: null, closed_by: '' },
     forUserId,
   );
