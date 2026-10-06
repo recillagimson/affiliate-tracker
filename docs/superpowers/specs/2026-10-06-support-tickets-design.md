@@ -51,8 +51,8 @@ the interface calls the thing.
   side may reopen a closed one explicitly, and any reply to a closed ticket
   reopens it as part of the same write.
 - The list shows a derived label for open tickets: "Waiting on support" when
-  the last message is from the affiliate, "Waiting on affiliate" when it is
-  from an admin.
+  the last message is from the affiliate. When it is from an admin, admins
+  see "Waiting on affiliate" and the affiliate sees "Waiting on you".
 
 ### Messages
 
@@ -192,7 +192,14 @@ codes are introduced.
   to `open` with the closed fields cleared if it was closed. Returns the
   message id. Refuses if the ticket does not exist.
 
-Close, reopen and mark-read are single-row updates done from the store.
+- `mark_support_read(ticket, side, user)` sets that side's read timestamp
+  with the database's `now()`. It is a function, not an update from the app,
+  so the read time and `last_message_at` come from the same clock; an app
+  server a second behind the database could otherwise leave a ticket unread
+  for good. On the affiliate side the user id is part of the match.
+
+Close and reopen are single-row updates done from the store, with the status
+the ticket must currently have in the match.
 
 The category and status lists exist in both SQL and TypeScript. A check
 script reads the migration and asserts they match, as
@@ -296,7 +303,7 @@ classes; no new design tokens.
 |---|---|
 | No database configured | Page shows `ErrorPanel` with the store's message; routes return the status from `statusForError` |
 | Ticket missing or not the viewer's | 404 |
-| Invalid subject, body, category or attachment | 400 with a message naming the field |
+| Invalid subject, body, category or attachment | 400 with a message naming the field (422 if only the database catches it) |
 | Attachments over the count or size limit | 400 naming the limit |
 | Throttled | 429 with `Retry-After` |
 | Email fails after a saved reply | 200, `emailed: false`, reason shown to the admin |
