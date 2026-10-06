@@ -1,4 +1,10 @@
-import { approvalMessage, syncMessages, type ApprovalAnnouncement } from './slack-messages';
+import {
+  approvalMessage,
+  supportMessage,
+  syncMessages,
+  type ApprovalAnnouncement,
+  type SupportAnnouncement,
+} from './slack-messages';
 
 /**
  * Posting to a Slack channel, through an incoming webhook.
@@ -103,4 +109,10 @@ export async function announceSync(
 ): Promise<string> {
   if (!slackConfigured()) return '';
   return announce(syncMessages(approvals, leadsMarked));
+}
+
+/** A support ticket opened or replied on by an affiliate. Never throws. */
+export async function announceSupport(announcement: SupportAnnouncement): Promise<string> {
+  if (!slackConfigured()) return '';
+  return announce([supportMessage(announcement)]);
 }

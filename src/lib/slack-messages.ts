@@ -1,4 +1,5 @@
 import { formatDay } from './analytics';
+import { CATEGORY_LABELS, type SupportCategory } from './support';
 
 /**
  * What Ledger says in Slack when an approval lands.
@@ -97,4 +98,45 @@ export function syncMessages(approvals: ApprovalAnnouncement[], leadsMarked: num
     leadsMarked > 0 ? `, ${leadsMarked} lead${leadsMarked === 1 ? '' : 's'} marked approved` : '';
   messages.push(`QMP sync: ${counted}${leads}.`);
   return messages;
+}
+
+/* ---------------------------------------------------------------- support --- */
+
+/** A support ticket an affiliate opened or replied on, as the channel needs to read it. */
+export type SupportAnnouncement = {
+  /** Who wrote. "username", or "username (via Admin Name)" from Client View. */
+  person: string;
+  subject: string;
+  category: SupportCategory;
+  kind: 'opened' | 'replied';
+  /** The conversation, as a full URL. */
+  url: string;
+};
+
+/**
+ * Slack reads &, < and > as markup: `<!channel>` pings everybody and
+ * `<http://x|text>` is a link wearing other words. A subject is typed by an
+ * affiliate, so those three are escaped the way Slack's own docs say to, and
+ * what they typed arrives as what they typed.
+ */
+function escapeSlack(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * One line of who, one of what, and where to answer.
+ *
+ * The subject and the category, never the message. The same rule the approval
+ * wording follows for money: a channel is read by everybody ever invited to
+ * it, and what an affiliate wrote to support is between them and support.
+ */
+export function supportMessage(announcement: SupportAnnouncement): string {
+  const who = announcement.person.trim() || 'Unknown';
+  const label = announcement.kind === 'opened' ? 'New ticket from' : 'New reply from';
+  return [
+    '*LEDGER - SUPPORT TICKET*',
+    `*${label}:* ${escapeSlack(who)}`,
+    `*Subject:* ${escapeSlack(announcement.subject.trim())} (${CATEGORY_LABELS[announcement.category]})`,
+    announcement.url,
+  ].join('\n');
 }
