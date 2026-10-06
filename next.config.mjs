@@ -17,17 +17,51 @@
  * a script source.
  */
 
+/*
+ * The one remote origin the browser is allowed to reach: this project's
+ * Supabase Storage, and only the support-attachments bucket.
+ *
+ * Support tickets carry screenshots and screen recordings, which are too large
+ * to pass through this app, so the browser uploads each one straight to a
+ * private bucket through a signed URL, and views it through a signed link the
+ * attachment route redirects to. Without these entries the policy below blocks
+ * both: the upload as a connection, the viewing as an image or a video.
+ *
+ * Scoped by path as well as host. Uploading may reach only the signed-upload
+ * path of that one bucket; viewing only its signed-download path. A browser
+ * drops the path from the check once a request has been redirected, so for
+ * the pictures and videos the host is what actually holds. Nothing here
+ * widens where scripts may come from.
+ *
+ * Empty when SUPABASE_URL is unset or is not https, which leaves the policy
+ * exactly as strict as it was.
+ */
+function supportStorage() {
+  const base = (process.env.SUPABASE_URL ?? '').trim().replace(/\/+$/, '');
+  if (!/^https:\/\/[A-Za-z0-9.-]+$/.test(base)) return { upload: '', view: '' };
+  return {
+    upload: ` ${base}/storage/v1/object/upload/sign/support-attachments/`,
+    view: ` ${base}/storage/v1/object/sign/support-attachments/`,
+  };
+}
+
+const STORAGE = supportStorage();
+
 const CSP = [
   "default-src 'self'",
   // 'unsafe-inline' and 'unsafe-eval' are what the framework's own inline
   // bootstrap and dev-mode refresh need. Everything remote is still refused.
   "script-src 'self' 'unsafe-inline'" + (process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''),
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob:" + STORAGE.view,
+  // Screen recordings on a support ticket. Otherwise default-src decides, and
+  // says no.
+  "media-src 'self' blob:" + STORAGE.view,
   "font-src 'self' data:",
-  // The browser only ever talks to this app. The QMP and Supabase calls are
-  // made server-side, so nothing here needs a remote connect origin.
-  "connect-src 'self'",
+  // The browser talks to this app, with one exception: uploading a support
+  // attachment straight to its bucket. The QMP and every other Supabase call
+  // are made server-side.
+  "connect-src 'self'" + STORAGE.upload,
   "form-action 'self'",
   "base-uri 'self'",
   "object-src 'none'",
