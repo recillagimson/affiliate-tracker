@@ -13,7 +13,7 @@
 
 import { StoreConfigError, StoreNotFoundError, StoreValidationError } from './store/errors';
 import { getSupabaseClient, isSupabaseConfigured } from './store/supabase';
-import { isIssuerKey, TRADELINE_ISSUERS, type IssuerKey, type Tradeline, type TradelineInput } from './tradelines';
+import { isIssuerKey, type IssuerKey, type Tradeline, type TradelineInput } from './tradelines';
 
 export function tradelinesEnabled(): boolean {
   return isSupabaseConfigured();
@@ -102,13 +102,6 @@ export async function listTradelines(): Promise<Tradeline[]> {
     if (rows.length < PAGE_SIZE) break;
   }
   return out;
-}
-
-/** How many tradelines each issuer has. Every issuer is present, at zero when it has none. */
-export function countByIssuer(rows: Tradeline[]): Record<IssuerKey, number> {
-  const counts = Object.fromEntries(TRADELINE_ISSUERS.map((issuer) => [issuer.key, 0])) as Record<IssuerKey, number>;
-  for (const row of rows) counts[row.issuer] += 1;
-  return counts;
 }
 
 function forInsert(issuer: IssuerKey, row: TradelineInput, by: string) {

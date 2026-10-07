@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { Modal } from '@/components/Modal';
@@ -8,6 +7,7 @@ import { BusyLabel } from '@/components/Spinner';
 import { TableScroller } from '@/components/TableScroller';
 import {
   checkTradeline,
+  countByIssuer,
   formatAge,
   formatLimit,
   formatOpenDate,
@@ -30,15 +30,13 @@ import {
 /**
  * Which issuer's table is showing, and how to reach the others.
  *
- * A card each, with the issuer's logo, because a row of six bank names is
- * read word by word and six logos are recognised at a glance. The name is
- * still written under each one: a logo alone says nothing to a screen reader,
- * or to anybody when the image does not load.
+ * A card each, with the issuer's logo and nothing written beside it but how
+ * many tradelines it holds: the logo is the name. It is still the image's alt
+ * text, so a screen reader hears it and it shows if the image does not load.
  *
- * Links rather than buttons, and the choice in the address: a table an admin
- * is working through should survive a reload, and "the Citi table" should be
- * something that can be sent to somebody. The first issuer is the bare
- * address, since it is where the page opens.
+ * Each is a real link with the issuer's own address, so it can be opened in a
+ * new tab or sent to somebody, but an ordinary click is handled in place
+ * (see TradelinesBrowser) and does not load the page again.
  *
  * The logo files are squares with the mark in the middle and white round it,
  * and how much of the square the mark fills differs from one to the next: a
@@ -64,45 +62,108 @@ const LOGO_SIZE: Record<IssuerKey, number> = {
   'us-bank': 107, // 80% wide
 };
 
-export function IssuerTabs({ current, counts }: { current: IssuerKey; counts: Record<IssuerKey, number> }) {
+/** The address that opens on an issuer. The first is the bare page, since that is where it opens anyway. */
+export function issuerHref(key: IssuerKey): string {
+  return key === TRADELINE_ISSUERS[0].key ? '/tradelines' : `/tradelines?issuer=${key}`;
+}
+
+/** One issuer's rows out of all of them. */
+export function pickIssuer(all: Tradeline[], issuer: IssuerKey): Tradeline[] {
+  return all.filter((row) => row.issuer === issuer);
+}
+
+export function IssuerTabs({
+  current,
+  counts,
+  onChoose,
+}: {
+  current: IssuerKey;
+  counts: Record<IssuerKey, number>;
+  /** When given, a plain click switches in place instead of loading the page again. */
+  onChoose?: (issuer: IssuerKey) => void;
+}) {
   return (
     <nav aria-label="Issuers" className="mt-5 flex flex-wrap gap-2">
-      {TRADELINE_ISSUERS.map((issuer, index) => {
+      {TRADELINE_ISSUERS.map((issuer) => {
         const active = issuer.key === current;
+        const count = counts[issuer.key] ?? 0;
         return (
-          <Link
+          <a
             key={issuer.key}
-            href={index === 0 ? '/tradelines' : `/tradelines?issuer=${issuer.key}`}
+            href={issuerHref(issuer.key)}
             data-active={active ? 'true' : 'false'}
             aria-current={active ? 'page' : undefined}
-            className={`group relative flex w-[132px] flex-col items-center overflow-hidden rounded-[8px] border bg-white px-2 pb-2 pt-1 text-center transition-colors ${
+            onClick={(event) => {
+              // A modified click (new tab, new window) is left to the browser,
+              // which is what the address on the link is for.
+              if (!onChoose || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+              event.preventDefault();
+              onChoose(issuer.key);
+            }}
+            className={`group relative flex w-[132px] cursor-pointer flex-col items-center overflow-hidden rounded-[8px] border bg-white px-2 pb-2 pt-1 text-center transition-colors active:bg-paper-sunk ${
               active ? 'border-navy shadow-[0_0_0_1px_var(--color-navy)]' : 'border-edge hover:border-edge-strong'
             }`}
           >
-            <span className="relative block h-[44px] w-full overflow-hidden">
+            <span className="pointer-events-none relative block h-[44px] w-full overflow-hidden">
               {/* A plain img: a small static file from this app's own public
-                  folder, with nothing for next/image to optimise. */}
+                  folder, with nothing for next/image to optimise. Its alt is
+                  the issuer's name, since no name is written beside it. */}
               <img
                 src={issuerLogo(issuer.key)}
-                alt=""
+                alt={issuer.label}
                 width={LOGO_SIZE[issuer.key]}
                 height={LOGO_SIZE[issuer.key]}
-                loading="lazy"
                 style={{ width: LOGO_SIZE[issuer.key], height: LOGO_SIZE[issuer.key] }}
                 className="absolute left-1/2 top-1/2 max-w-none -translate-x-1/2 -translate-y-1/2"
               />
             </span>
-            <span className={`block text-[11px] leading-tight ${active ? 'font-semibold text-ink' : 'font-medium text-ink-soft'}`}>
-              {issuer.label}
+            <span className={`tnum pointer-events-none block text-[10px] ${active ? 'font-semibold text-ink' : 'text-ink-dim'}`}>
+              <span>{count}</span> {count === 1 ? 'tradeline' : 'tradelines'}
             </span>
-            <span className="tnum mt-0.5 block text-[10px] text-ink-dim">
-              <span>{counts[issuer.key] ?? 0}</span> {(counts[issuer.key] ?? 0) === 1 ? 'tradeline' : 'tradelines'}
-            </span>
-            <span aria-hidden className={`absolute inset-x-0 bottom-0 h-[2px] ${active ? 'bg-navy' : 'bg-transparent'}`} />
-          </Link>
+            <span aria-hidden className={`pointer-events-none absolute inset-x-0 bottom-0 h-[2px] ${active ? 'bg-navy' : 'bg-transparent'}`} />
+          </a>
         );
       })}
     </nav>
+  );
+}
+
+/**
+ * The issuer cards and the table under them, switching without a round trip.
+ *
+ * The page hands over every issuer's tradelines at once; they are a few dozen
+ * small rows each, and the counts on the cards need them all anyway. So
+ * choosing an issuer is a change of which rows are drawn, and happens the
+ * moment the card is pressed. It used to be a link that loaded the page
+ * again, which took a second or two with nothing on screen to say it had
+ * been pressed, and read as a card that could not be clicked.
+ *
+ * The address is still kept in step, without a navigation, so a reload or a
+ * copied link opens on the same issuer.
+ */
+export function TradelinesBrowser({
+  all,
+  initialIssuer,
+  today,
+}: {
+  all: Tradeline[];
+  initialIssuer: IssuerKey;
+  today: string;
+}) {
+  const [issuer, setIssuer] = useState<IssuerKey>(initialIssuer);
+  const counts = useMemo(() => countByIssuer(all), [all]);
+
+  function choose(next: IssuerKey) {
+    setIssuer(next);
+    window.history.replaceState(null, '', issuerHref(next));
+  }
+
+  return (
+    <>
+      <IssuerTabs current={issuer} counts={counts} onChoose={choose} />
+      {/* Remounted per issuer, so a sort or an open dialog does not carry from one table to the next. */}
+      <TradelinesTable key={issuer} issuer={issuer} rows={pickIssuer(all, issuer)} today={today} />
+    </>
   );
 }
 

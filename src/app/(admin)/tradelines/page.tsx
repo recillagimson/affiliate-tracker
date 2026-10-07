@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import { ErrorPanel } from '@/components/ErrorPanel';
-import { IssuerTabs, TradelinesTable } from '@/components/TradelinesTable';
+import { TradelinesBrowser } from '@/components/TradelinesTable';
 import { issuerFrom, type Tradeline } from '@/lib/tradelines';
-import { countByIssuer, listTradelines, tradelinesEnabled } from '@/lib/tradelines-store';
+import { listTradelines, tradelinesEnabled } from '@/lib/tradelines-store';
 import { requireAdmin } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -70,9 +70,8 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
         </p>
       </div>
 
-      <IssuerTabs current={issuer} counts={countByIssuer(all)} />
-      {/* Remounted per issuer, so a sort or an open dialog does not carry from one table to the next. */}
-      <TradelinesTable key={issuer} issuer={issuer} rows={all.filter((row) => row.issuer === issuer)} today={today} />
+      {/* Every issuer's rows at once, so choosing one is instant. Which opens first comes from the address. */}
+      <TradelinesBrowser all={all} initialIssuer={issuer} today={today} />
     </div>
   );
 }

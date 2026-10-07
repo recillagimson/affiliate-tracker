@@ -10,7 +10,7 @@ import {
 } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { PathnameContext } from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
 import { visibleItems, Nav } from '../src/components/Nav';
-import { IssuerTabs, PastePreview, TradelinesTable } from '../src/components/TradelinesTable';
+import { issuerHref, IssuerTabs, PastePreview, pickIssuer, TradelinesBrowser, TradelinesTable } from '../src/components/TradelinesTable';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parsePaste, TRADELINE_ISSUERS, type Tradeline } from '../src/lib/tradelines';
@@ -66,7 +66,19 @@ for (const issuer of TRADELINE_ISSUERS) {
   check(`${issuer.label}'s logo file is there to be served`, existsSync(join(__dirname, '..', 'public', 'issuers', `${issuer.key}.webp`)));
 }
 check('six logos, one each', (tabs.match(/<img/g) ?? []).length === 6);
-check('the name is still written under the logo, for anybody who cannot see it', (tabs.match(/alt=""/g) ?? []).length === 6 && tabs.includes('Fidelity/Elan Tradeline'));
+check('the logo is the name: no name is written under it', !/>Capital One</.test(tabs) && !/>Fidelity\/Elan Tradeline</.test(tabs));
+check('but each logo still says who it is, for anybody who cannot see it', TRADELINE_ISSUERS.every((issuer) => tabs.includes(`alt="${issuer.label}"`)));
+
+console.log('- switching issuer -');
+const all: Tradeline[] = [
+  ...rows,
+  { id: '9', issuer: 'citi', name: 'Citi Double Cash', creditLimit: 7500, openDate: '2015-03-03', age: 10.5 },
+];
+const browser = render(<TradelinesBrowser all={all} initialIssuer="citi" today={TODAY} />);
+check('it opens on the issuer in the address', browser.includes('Citi Double Cash') && !browser.includes('Capital One/Cabelas'));
+check('with every issuer counted from the rows it was handed', browser.includes('>3<') && browser.includes('>1<'));
+check('every issuer\'s rows are already on the page, so choosing one waits for nothing', pickIssuer(all, 'capital-one').length === 3 && pickIssuer(all, 'citi').length === 1 && pickIssuer(all, 'pnc').length === 0);
+check('each address is the one a reload would open on', issuerHref('capital-one') === '/tradelines' && issuerHref('pnc') === '/tradelines?issuer=pnc');
 check('the one showing is told apart without relying on the logo', tabs.includes('aria-current="page"'));
 
 console.log('- the table -');

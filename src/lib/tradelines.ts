@@ -78,6 +78,13 @@ export type Tradeline = {
   age: number | null;
 };
 
+/** How many tradelines each issuer has. Every issuer is present, at zero when it has none. */
+export function countByIssuer(rows: Pick<Tradeline, 'issuer'>[]): Record<IssuerKey, number> {
+  const counts = Object.fromEntries(TRADELINE_ISSUERS.map((issuer) => [issuer.key, 0])) as Record<IssuerKey, number>;
+  for (const row of rows) counts[row.issuer] += 1;
+  return counts;
+}
+
 /** A tradeline before it has been stored: what a form or a paste produces. */
 export type TradelineInput = { name: string; creditLimit: number; openDate: string; age: number | null };
 
