@@ -10,6 +10,7 @@ import {
   isEnvAdminId,
   resetUserPassword,
   setUserActive,
+  setUserDetails,
   setUserRole,
   setUserServices,
   usersEnabled,
@@ -119,6 +120,12 @@ export async function PATCH(request: Request, { params }: Context) {
       }
       const services = await setUserServices(id, patch.services);
       return NextResponse.json({ user: target, services });
+    }
+
+    // A name or an email cannot lock anybody out either.
+    if (patch.action === 'set-details') {
+      const user = await setUserDetails(id, { fullName: patch.fullName, email: patch.email });
+      return NextResponse.json({ user });
     }
 
     const blocked = await blockedReason(

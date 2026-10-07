@@ -259,6 +259,12 @@ export const userPatchSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('disable') }),
   z.object({ action: z.literal('set-role'), role: z.enum(PERSON_ROLES) }),
   z.object({ action: z.literal('set-services'), services: servicesSchema }),
+  // The same two fields, with the same limits, as creating the account.
+  z.object({
+    action: z.literal('set-details'),
+    fullName: z.string().trim().max(120),
+    email: z.union([z.literal(''), z.string().trim().email('Enter a valid email')]),
+  }),
 ]);
 
 /** One role for several people, from the People list. */

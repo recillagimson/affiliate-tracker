@@ -503,6 +503,30 @@ export async function setLgfEmployee(id: string, lgfEmployee: boolean): Promise<
   if (error) fail('saving the role', error);
 }
 
+/**
+ * Correct somebody's name or email, from the People list.
+ *
+ * Both are also what the affiliate types in their own onboarding profile step,
+ * so this is the admin's way to fix a typo or add an address somebody never
+ * gave, not a second source of truth. The email is where approval, payout and
+ * support messages go.
+ */
+export async function setUserDetails(
+  id: string,
+  details: { fullName: string; email: string },
+): Promise<UserAccount> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .update({ full_name: details.fullName.trim(), email: details.email.trim() })
+    .eq('id', id)
+    .select(PUBLIC_COLUMNS)
+    .maybeSingle();
+  if (error) fail('saving their details', error);
+  if (!data) throw new StoreNotFoundError('That account no longer exists.');
+  return toAccount(data as unknown as Omit<UserRow, 'password_hash'>);
+}
+
 /* ------------------------------------------------------------------ */
 /* Services                                                             */
 /* ------------------------------------------------------------------ */

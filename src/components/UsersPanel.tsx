@@ -14,6 +14,7 @@ import { awaitingReview, isBypassed, NO_BYPASS, type Approval, type Bypass } fro
 import { PERSON_ROLES, personRole, ROLE_LABELS, type PersonRole } from '@/lib/roles';
 import { DEFAULT_SERVICES, servicesProblem, type Service } from '@/lib/services';
 import { Modal } from '@/components/Modal';
+import { PersonDialog } from '@/components/PersonDialog';
 import { ServiceBoxes, ServiceChips } from '@/components/ServicesSelect';
 
 export type AccountRow = {
@@ -164,6 +165,10 @@ export function UsersPanel({
   /* What went wrong creating somebody, said inside the dialog. The page's own
      alert sits behind it while it is open, where nobody would read it. */
   const [formError, setFormError] = useState<string | null>(null);
+  /* Whose account dialog is open, by id rather than by row: the row is read
+     fresh from `rows` each render, so a save shows through at once. */
+  const [openedId, setOpenedId] = useState<string | null>(null);
+  const opened = openedId ? (rows.find((row) => row.id === openedId) ?? null) : null;
   const [query, setQuery] = useState('');
   const [role, setRole] = useState<RoleFilter>('all');
   const [status, setStatus] = useState<StatusFilter>('all');
@@ -464,6 +469,11 @@ export function UsersPanel({
           </span>
           <span>{error}</span>
         </p>
+      ) : null}
+
+      {/* Keyed by person, so opening somebody else starts from their own details. */}
+      {opened ? (
+        <PersonDialog key={opened.id} row={opened} viewerId={viewerId} onClose={() => setOpenedId(null)} />
       ) : null}
 
       {/*
@@ -869,15 +879,20 @@ export function UsersPanel({
                       <td className="whitespace-nowrap px-5 py-2.5 text-right">
                         <span className="inline-flex justify-end gap-1.5">
                           {/*
-                            First, and a link rather than a button: it is the
-                            only action here that is not destructive and the one
-                            most often wanted. The record was reachable before
-                            only through the ticks in the Setup column, which is
-                            a link nobody reads as "open this person".
+                            First, because it is the only action here that is
+                            not destructive and the one most often wanted. It
+                            opens their account over the list: who they are,
+                            and the things an admin changes. Their paperwork
+                            is one link further, on their own page.
                           */}
-                          <Link href={`/users/${encodeURIComponent(row.id)}`} className="btn-quiet btn-sm">
+                          <button
+                            type="button"
+                            className="btn-quiet btn-sm"
+                            aria-haspopup="dialog"
+                            onClick={() => setOpenedId(row.id)}
+                          >
                             Details
-                          </Link>
+                          </button>
                           <button
                             type="button"
                             className="btn-danger btn-sm"
