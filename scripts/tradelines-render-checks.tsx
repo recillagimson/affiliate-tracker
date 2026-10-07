@@ -35,9 +35,9 @@ function render(node: ReactNode): string {
 
 const TODAY = '2025-08-25';
 const rows: Tradeline[] = [
-  { id: '1', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: 13.38356164 },
-  { id: '2', issuer: 'capital-one', name: 'Capital One Walmart', creditLimit: 1524, openDate: '2017-12-31', age: 7.654794521 },
-  { id: '3', issuer: 'capital-one', name: 'Capital One <b>', creditLimit: 5000, openDate: '2011-04-02', age: null },
+  { id: '1', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: 13.38356164, userPrice: 450 },
+  { id: '2', issuer: 'capital-one', name: 'Capital One Walmart', creditLimit: 1524, openDate: '2017-12-31', age: 7.654794521, userPrice: 1250.5 },
+  { id: '3', issuer: 'capital-one', name: 'Capital One <b>', creditLimit: 5000, openDate: '2011-04-02', age: null, userPrice: null },
 ];
 
 console.log('- the navigation -');
@@ -72,7 +72,7 @@ check('but each logo still says who it is, for anybody who cannot see it', TRADE
 console.log('- switching issuer -');
 const all: Tradeline[] = [
   ...rows,
-  { id: '9', issuer: 'citi', name: 'Citi Double Cash', creditLimit: 7500, openDate: '2015-03-03', age: 10.5 },
+  { id: '9', issuer: 'citi', name: 'Citi Double Cash', creditLimit: 7500, openDate: '2015-03-03', age: 10.5, userPrice: 300 },
 ];
 const browser = render(<TradelinesBrowser all={all} initialIssuer="citi" today={TODAY} />);
 check('it opens on the issuer in the address', browser.includes('Citi Double Cash') && !browser.includes('Capital One/Cabelas'));
@@ -83,7 +83,7 @@ check('the one showing is told apart without relying on the logo', tabs.includes
 
 console.log('- the table -');
 const table = render(<TradelinesTable issuer="capital-one" rows={rows} today={TODAY} />);
-for (const heading of ['Issuer/Type', 'Credit Limit', 'Open Date', 'Age (Years)']) {
+for (const heading of ['Issuer/Type', 'Credit Limit', 'Open Date', 'Age (Years)', 'User Price']) {
   check(`a ${heading} column`, table.includes(heading));
 }
 check('a tradeline is named', table.includes('Capital One/Cabelas'));
@@ -94,6 +94,9 @@ check('its age is the pasted figure, every digit of it', table.includes('>13.383
 check('and is not worked out from the open date', !render(<TradelinesTable issuer="capital-one" rows={rows} today="2026-10-07" />).includes('14.5'));
 check('a tradeline with no age shows none', !table.includes('NaN') && !table.includes('>0<'));
 check('an age can be typed when adding one', table.includes('name="age"'));
+check('the user price is shown as money', table.includes('>$450<') && table.includes('>$1,250.50<'));
+check('and can be typed when adding one', table.includes('name="userPrice"'));
+check('the columns run in the sheet\'s order, price last', table.indexOf('Age (Years)') < table.indexOf('User Price'));
 check('a name is text, never markup', !table.includes('<b>') && table.includes('&lt;b&gt;'));
 check('each row can be edited and deleted', table.split('>Edit<').length === 4 && table.split('>Delete<').length === 4);
 check('one can be added', table.includes('Add tradeline'));
@@ -104,9 +107,10 @@ check('an empty table says so, and for which issuer', empty.includes('No tradeli
 check('and still offers to add some', empty.includes('Paste rows') && empty.includes('Add tradeline'));
 
 console.log('- what a paste will do -');
-const good = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\t10.48493151\nCiti B\t$2,000\t20-Jan-16\n', TODAY)} />);
+const good = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\t10.48493151\t$425\nCiti B\t$2,000\t20-Jan-16\n', TODAY)} />);
 check('it says how many rows were read', good.includes('2 tradelines read'));
 check('and shows them, with the age as pasted', good.includes('Citi A') && good.includes('$7,500') && good.includes('3 Mar 2015') && good.includes('10.48493151'));
+check('and the price as pasted', good.includes('$425'));
 const mixed = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\nCiti B\tcall us\t3-Mar-15\n', TODAY)} />);
 check('a row it could not read is listed with its line', mixed.includes('Line 2') && mixed.includes('credit limit'));
 check('and counted', mixed.includes('1 row could not be read'));

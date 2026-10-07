@@ -2,9 +2,9 @@
  * The tradelines table: which issuers there are, how a pasted spreadsheet
  * becomes rows, and how old a tradeline is.
  *
- * A tradeline here is four facts: what it is (an issuer and type, such as
- * "Capital One Walmart"), its credit limit, the day it was opened, and its
- * age in years.
+ * A tradeline here is five facts: what it is (an issuer and type, such as
+ * "Capital One Walmart"), its credit limit, the day it was opened, its age in
+ * years, and its user price, which is what the user pays us for it.
  *
  * The age is the sheet's own figure, kept and shown exactly as it was pasted
  * or typed. It is never worked out here. An earlier version calculated it
@@ -76,6 +76,8 @@ export type Tradeline = {
   openDate: string;
   /** Its age in years, exactly as given. Null when none was. */
   age: number | null;
+  /** What the user pays us for it. Null when no price has been set. */
+  userPrice: number | null;
 };
 
 /** How many tradelines each issuer has. Every issuer is present, at zero when it has none. */
@@ -86,12 +88,21 @@ export function countByIssuer(rows: Pick<Tradeline, 'issuer'>[]): Record<IssuerK
 }
 
 /** A tradeline before it has been stored: what a form or a paste produces. */
-export type TradelineInput = { name: string; creditLimit: number; openDate: string; age: number | null };
+export type TradelineInput = {
+  name: string;
+  creditLimit: number;
+  openDate: string;
+  age: number | null;
+  userPrice: number | null;
+};
 
 export const MAX_NAME = 120;
 
 /** More than any real limit, and few enough digits that a slipped key is caught. */
 export const MAX_LIMIT = 10_000_000;
+
+/** More than any tradeline is sold for, and enough to catch a limit pasted into the price column. */
+export const MAX_PRICE = 1_000_000;
 
 /** Older than any account could be, and enough to catch a figure pasted into the wrong column. */
 export const MAX_AGE = 150;
@@ -120,6 +131,25 @@ export function formatLimit(amount: number): string {
     minimumFractionDigits: whole ? 0 : 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+/**
+ * A user price as a sheet writes it: "$450", "1,250.50". Null for nothing and
+ * for anything that is not an amount from 0 to MAX_PRICE. Zero is a price;
+ * no price is null, and the two are shown differently.
+ */
+export function parsePrice(raw: unknown): number | null {
+  if (typeof raw === 'number') return Number.isFinite(raw) && raw >= 0 && raw <= MAX_PRICE ? raw : null;
+  if (typeof raw !== 'string') return null;
+  const text = raw.replace(/[\s$,]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+  const amount = Number(text);
+  return Number.isFinite(amount) && amount <= MAX_PRICE ? amount : null;
+}
+
+/** A price as money, and nothing for a tradeline that has none. */
+export function formatPrice(amount: number | null): string {
+  return amount === null || !Number.isFinite(amount) ? '' : formatLimit(amount);
 }
 
 /* ------------------------------------------------------------------ dates --- */
@@ -262,6 +292,10 @@ export function checkTradeline(input: TradelineInput, today: string): Record<str
   if (input.age !== null && (!Number.isFinite(input.age) || input.age < 0 || input.age > MAX_AGE)) {
     problems.age = 'Enter the age in years as a number, such as 13.38, or leave it blank.';
   }
+
+  if (input.userPrice !== null && (!Number.isFinite(input.userPrice) || input.userPrice < 0 || input.userPrice > MAX_PRICE)) {
+    problems.userPrice = 'Enter the user price as an amount, such as $450, or leave it blank.';
+  }
   return problems;
 }
 
@@ -282,6 +316,7 @@ export function readTradelineInput(
     creditLimit: parseLimit(item.creditLimit) ?? 0,
     openDate: parseOpenDate(item.openDate, today),
     age: parseAge(item.age),
+    userPrice: parsePrice(item.userPrice),
   };
   const fields = checkTradeline(input, today);
   // A blank age is no age. Anything else that did not read as one is a
@@ -289,6 +324,11 @@ export function readTradelineInput(
   const given = item.age;
   const blank = given === undefined || given === null || (typeof given === 'string' && given.trim() === '');
   if (!blank && input.age === null) fields.age = 'Enter the age in years as a number, such as 13.38, or leave it blank.';
+  const price = item.userPrice;
+  const noPrice = price === undefined || price === null || (typeof price === 'string' && price.trim() === '');
+  if (!noPrice && input.userPrice === null) {
+    fields.userPrice = 'Enter the user price as an amount, such as $450, or leave it blank.';
+  }
   return Object.keys(fields).length === 0 ? { ok: true, value: input } : { ok: false, fields };
 }
 
@@ -304,7 +344,13 @@ export type PasteProblem = {
 
 export type PasteResult = { rows: TradelineInput[]; problems: PasteProblem[] };
 
-const HEADERS = [/^issuer(\s*\/\s*type)?$/i, /^credit\s*limit$/i, /^open\s*date$/i, /^age(\s*\(\s*years?\s*\))?$/i];
+const HEADERS = [
+  /^issuer(\s*\/\s*type)?$/i,
+  /^credit\s*limit$/i,
+  /^open\s*date$/i,
+  /^age(\s*\(\s*years?\s*\))?$/i,
+  /^(user\s*)?price$/i,
+];
 
 function isHeader(text: string): boolean {
   return HEADERS.some((pattern) => pattern.test(text.trim()));
@@ -316,6 +362,7 @@ function rowProblem(
   limit: string,
   date: string,
   age: string,
+  price: string,
   today: string,
 ): { reason: string; value: TradelineInput | null } {
   if (!name.trim()) return { reason: 'This row has no name.', value: null };
@@ -327,7 +374,12 @@ function rowProblem(
   // there but unreadable is reported, never swapped for a worked-out figure.
   const years = age.trim() === '' ? null : parseAge(age);
   if (age.trim() !== '' && years === null) return { reason: `The age could not be read: "${age.trim()}".`, value: null };
-  const value = { name: name.replace(/\s+/g, ' ').trim(), creditLimit, openDate, age: years };
+  // The same for the price: optional, but if a cell is there it has to read.
+  const userPrice = price.trim() === '' ? null : parsePrice(price);
+  if (price.trim() !== '' && userPrice === null) {
+    return { reason: `The user price could not be read: "${price.trim()}".`, value: null };
+  }
+  const value = { name: name.replace(/\s+/g, ' ').trim(), creditLimit, openDate, age: years, userPrice };
   const found = Object.values(checkTradeline(value, today));
   return found.length > 0 ? { reason: found[0]!, value: null } : { reason: '', value };
 }
@@ -353,8 +405,8 @@ export function parsePaste(text: string, today: string): PasteResult {
   const problems: PasteProblem[] = [];
   let dropped = 0;
 
-  function take(line: number, shown: string, name: string, limit: string, date: string, age: string) {
-    const { reason, value } = rowProblem(name, limit, date, age, today);
+  function take(line: number, shown: string, name: string, limit: string, date: string, age: string, price: string) {
+    const { reason, value } = rowProblem(name, limit, date, age, price, today);
     if (!value) {
       problems.push({ line, text: shown, reason });
       return;
@@ -372,7 +424,7 @@ export function parsePaste(text: string, today: string): PasteResult {
       const cells = raw.split('\t').map((cell) => cell.trim());
       // The header: its second cell names a column instead of holding an amount.
       if (isHeader(cells[0] ?? '') && parseLimit(cells[1] ?? '') === null) return;
-      take(index + 1, cells.filter(Boolean).join(' | '), cells[0] ?? '', cells[1] ?? '', cells[2] ?? '', cells[3] ?? '');
+      take(index + 1, cells.filter(Boolean).join(' | '), cells[0] ?? '', cells[1] ?? '', cells[2] ?? '', cells[3] ?? '', cells[4] ?? '');
     });
   } else {
     const filled = lines.map((raw, index) => ({ text: raw.trim(), line: index + 1 })).filter((entry) => entry.text !== '');
@@ -396,7 +448,24 @@ export function parsePaste(text: string, today: string): PasteResult {
         age = filled[at]!.text;
         at += 1;
       }
-      take(name.line, [name.text, limit.text, date.text, age].filter(Boolean).join(' | '), name.text, limit.text, date.text, age);
+      // The user price, when the sheet's fifth column came along too. An
+      // amount written as money can only be that, since the next row would
+      // begin with a name; so can a second bare number straight after an age.
+      let price = '';
+      const next = at < filled.length ? filled[at]!.text : '';
+      if ((next.startsWith('$') && parsePrice(next) !== null) || (age !== '' && /^\d+(\.\d+)?$/.test(next))) {
+        price = next;
+        at += 1;
+      }
+      take(
+        name.line,
+        [name.text, limit.text, date.text, age, price].filter(Boolean).join(' | '),
+        name.text,
+        limit.text,
+        date.text,
+        age,
+        price,
+      );
     }
   }
 
@@ -412,14 +481,15 @@ export function parsePaste(text: string, today: string): PasteResult {
 
 /* ---------------------------------------------------------------- sorting --- */
 
-export type TradelineSort = 'entered' | 'name' | 'creditLimit' | 'openDate' | 'age';
+export type TradelineSort = 'entered' | 'name' | 'creditLimit' | 'openDate' | 'age' | 'userPrice';
 
 /**
  * The table in the order asked for. A new list; the one given is left alone.
  *
  * Age sorts by the age on the row, which is the sheet's figure and need not
- * agree with the open date. A row with no age goes last whichever way the
- * sort runs: it is not the youngest and it is not the oldest, it is unknown.
+ * agree with the open date. A row with no age, or no price when sorting by
+ * price, goes last whichever way the sort runs: it is not the least and it is
+ * not the most, it is unknown.
  * Anything that ties falls back to the order the rows were entered in, so a
  * sort never shuffles rows that are equal.
  */
@@ -430,9 +500,10 @@ export function sortTradelines(rows: Tradeline[], key: TradelineSort, direction:
     if (key === 'name') return sign * a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
     if (key === 'creditLimit') return sign * (a.creditLimit - b.creditLimit);
     if (key === 'openDate') return sign * (a.openDate < b.openDate ? -1 : a.openDate > b.openDate ? 1 : 0);
-    if (key === 'age') {
-      if (a.age === null || b.age === null) return a.age === b.age ? 0 : a.age === null ? 1 : -1;
-      return sign * (a.age - b.age);
+    if (key === 'age' || key === 'userPrice') {
+      const [x, y] = [a[key], b[key]];
+      if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+      return sign * (x - y);
     }
     return sign * entered(a, b);
   };

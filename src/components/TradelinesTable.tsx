@@ -11,11 +11,13 @@ import {
   formatAge,
   formatLimit,
   formatOpenDate,
+  formatPrice,
   issuerLabel,
   issuerLogo,
   MAX_NAME,
   parseAge,
   parseLimit,
+  parsePrice,
   parsePaste,
   sortTradelines,
   TRADELINE_ISSUERS,
@@ -204,6 +206,7 @@ const COLUMNS: { key: TradelineSort; label: string; right: boolean }[] = [
   { key: 'creditLimit', label: 'Credit Limit', right: true },
   { key: 'openDate', label: 'Open Date', right: true },
   { key: 'age', label: 'Age (Years)', right: true },
+  { key: 'userPrice', label: 'User Price', right: true },
 ];
 
 type Editing = { mode: 'add' } | { mode: 'edit'; row: Tradeline } | null;
@@ -211,8 +214,9 @@ type Editing = { mode: 'add' } | { mode: 'edit'; row: Tradeline } | null;
 /**
  * One issuer's tradelines, and the ways an admin keeps them up to date.
  *
- * Four columns, the sheet's own. The fourth, age, is the sheet's figure shown
- * exactly as it was pasted or typed; nothing here works it out. `today` is
+ * Five columns. The fourth, age, is the sheet's figure shown exactly as it
+ * was pasted or typed; nothing here works it out. The fifth, user price, is
+ * what the user pays us for the tradeline, blank until one is set. `today` is
  * only for reading a paste's two-digit years and for stopping an open date
  * being set in the future.
  *
@@ -325,6 +329,7 @@ export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; ro
                     {formatOpenDate(row.openDate)}
                   </td>
                   <td className="tnum px-5 py-3 text-right text-[13px] text-ink">{formatAge(row.age)}</td>
+                  <td className="tnum px-5 py-3 text-right text-[13px] font-medium text-ink">{formatPrice(row.userPrice)}</td>
                   <td className="whitespace-nowrap px-5 py-2 text-right">
                     <span className="inline-flex justify-end gap-1.5">
                       <button
@@ -408,6 +413,7 @@ function TradelineForm({
   const [limit, setLimit] = useState(row ? formatLimit(row.creditLimit) : '');
   const [openDate, setOpenDate] = useState(row?.openDate ?? '');
   const [age, setAge] = useState(row ? formatAge(row.age) : '');
+  const [price, setPrice] = useState(row ? formatPrice(row.userPrice) : '');
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -415,10 +421,19 @@ function TradelineForm({
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const input = { name: name.trim(), creditLimit: parseLimit(limit) ?? 0, openDate, age: parseAge(age) };
+    const input = {
+      name: name.trim(),
+      creditLimit: parseLimit(limit) ?? 0,
+      openDate,
+      age: parseAge(age),
+      userPrice: parsePrice(price),
+    };
     const found = checkTradeline(input, today);
     // Something typed that is not a number is a mistake to say, not a blank.
     if (age.trim() !== '' && input.age === null) found.age = 'Enter the age in years as a number, such as 13.38, or leave it blank.';
+    if (price.trim() !== '' && input.userPrice === null) {
+      found.userPrice = 'Enter the user price as an amount, such as $450, or leave it blank.';
+    }
     if (Object.keys(found).length > 0) {
       setProblems(found);
       return;
@@ -457,7 +472,7 @@ function TradelineForm({
           {problems.name ? <span className="field-error">{problems.name}</span> : null}
         </label>
 
-        <div className="grid gap-x-5 gap-y-6 sm:grid-cols-3">
+        <div className="grid gap-x-5 gap-y-6 sm:grid-cols-2">
           <label className="block">
             <span className="field-label">Credit limit</span>
             <input
@@ -506,6 +521,26 @@ function TradelineForm({
               <span className="field-error">{problems.age}</span>
             ) : (
               <span className="field-note">Shown exactly as typed. It is not worked out from the date.</span>
+            )}
+          </label>
+
+          <label className="block">
+            <span className="field-label">User Price</span>
+            <input
+              name="userPrice"
+              className="field mt-1.5"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="$450"
+              inputMode="decimal"
+              autoComplete="off"
+              disabled={busy}
+              aria-invalid={problems.userPrice ? true : undefined}
+            />
+            {problems.userPrice ? (
+              <span className="field-error">{problems.userPrice}</span>
+            ) : (
+              <span className="field-note">What the user pays us. Leave blank if it is not set yet.</span>
             )}
           </label>
         </div>
@@ -557,6 +592,7 @@ export function PastePreview({ result }: { result: PasteResult }) {
                     <td className="tnum px-3 py-1.5 text-right text-ink">{formatLimit(row.creditLimit)}</td>
                     <td className="tnum whitespace-nowrap px-3 py-1.5 text-right text-ink-soft">{formatOpenDate(row.openDate)}</td>
                     <td className="tnum px-3 py-1.5 text-right text-ink-soft">{formatAge(row.age)}</td>
+                    <td className="tnum px-3 py-1.5 text-right text-ink">{formatPrice(row.userPrice)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -655,13 +691,13 @@ function PasteDialog({
             className="field mt-1.5 min-h-[150px] py-2 font-mono text-[12px] leading-relaxed"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={'Capital One Walmart\t$1,524\t31-Dec-17\t7.654794521'}
+            placeholder={'Capital One Walmart\t$1,524\t31-Dec-17\t7.654794521\t$250'}
             spellCheck={false}
             disabled={busy}
           />
           <span className="field-note">
-            Copy the Issuer/Type, Credit Limit, Open Date and Age (Years) columns and paste them here. A header row is
-            fine. The age is saved exactly as pasted.
+            Copy the Issuer/Type, Credit Limit, Open Date, Age (Years) and User Price columns, in that order, and paste them
+            here. A header row is fine, and the last two columns can be left out. The age is saved exactly as pasted.
           </span>
         </label>
 

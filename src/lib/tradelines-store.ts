@@ -2,7 +2,7 @@
  * The tradelines table, in Supabase.
  *
  * public.tradelines holds one row per tradeline; see migrations
- * 20261010120000 and 20261011120000. Sits beside the other feature stores rather than inside the
+ * 20261010120000, 20261011120000 and 20261012120000. Sits beside the other feature stores rather than inside the
  * Store interface: this is reference data an admin maintains by hand, with no
  * Google Sheets or local-file equivalent. Supabase or nothing.
  *
@@ -36,10 +36,13 @@ function fail(context: string, error: PostgrestErrorish): never {
   const code = error?.code ?? '';
   const message = error?.message ?? '';
   if (['42P01', 'PGRST205', '42883', 'PGRST202'].includes(code)) throw new StoreConfigError(MISSING);
-  // The table is there but the age column is not: the second migration has not been run.
+  // The table is there but a column is not: a later migration has not been
+  // run. Postgres names the column it could not find, which says which one.
   if (code === '42703' || code === 'PGRST204') {
     throw new StoreConfigError(
-      'The tradelines table is missing its age column. Run the 20261011120000_tradelines_age migration.',
+      /user_price/.test(message)
+        ? 'The tradelines table is missing its user price column. Run the 20261012120000_tradelines_user_price migration.'
+        : 'The tradelines table is missing a column. Run the 20261011120000_tradelines_age and 20261012120000_tradelines_user_price migrations.',
     );
   }
   if (code === '42501') {
@@ -59,7 +62,7 @@ function isRowId(id: string): boolean {
   return /^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id));
 }
 
-const COLUMNS = 'id, issuer, name, credit_limit, open_date, age_years';
+const COLUMNS = 'id, issuer, name, credit_limit, open_date, age_years, user_price';
 
 function toTradeline(row: Record<string, unknown>): Tradeline | null {
   if (!isIssuerKey(row.issuer)) return null;
@@ -71,6 +74,7 @@ function toTradeline(row: Record<string, unknown>): Tradeline | null {
     openDate: String(row.open_date ?? '').slice(0, 10),
     // As stored, which is as given. Null stays null: no age is not zero.
     age: row.age_years === null || row.age_years === undefined ? null : Number(row.age_years),
+    userPrice: row.user_price === null || row.user_price === undefined ? null : Number(row.user_price),
   };
 }
 
@@ -111,6 +115,7 @@ function forInsert(issuer: IssuerKey, row: TradelineInput, by: string) {
     credit_limit: row.creditLimit,
     open_date: row.openDate,
     age_years: row.age,
+    user_price: row.userPrice,
     created_by: by,
     updated_by: by,
   };
@@ -138,6 +143,7 @@ export async function replaceTradelines(issuer: IssuerKey, rows: TradelineInput[
       credit_limit: row.creditLimit,
       open_date: row.openDate,
       age_years: row.age,
+      user_price: row.userPrice,
     })),
     p_by: by,
   });
@@ -156,6 +162,7 @@ export async function updateTradeline(id: string, row: TradelineInput, by: strin
       credit_limit: row.creditLimit,
       open_date: row.openDate,
       age_years: row.age,
+      user_price: row.userPrice,
       updated_at: new Date().toISOString(),
       updated_by: by,
     })
