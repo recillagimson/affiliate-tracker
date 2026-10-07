@@ -1,8 +1,8 @@
 /**
  * The tradelines table, in Supabase.
  *
- * public.tradelines holds one row per tradeline; see migration
- * 20261010120000. Sits beside the other feature stores rather than inside the
+ * public.tradelines holds one row per tradeline; see migrations
+ * 20261010120000 and 20261011120000. Sits beside the other feature stores rather than inside the
  * Store interface: this is reference data an admin maintains by hand, with no
  * Google Sheets or local-file equivalent. Supabase or nothing.
  *
@@ -35,7 +35,13 @@ const MISSING =
 function fail(context: string, error: PostgrestErrorish): never {
   const code = error?.code ?? '';
   const message = error?.message ?? '';
-  if (['42P01', 'PGRST205', '42883', 'PGRST202', '42703', 'PGRST204'].includes(code)) throw new StoreConfigError(MISSING);
+  if (['42P01', 'PGRST205', '42883', 'PGRST202'].includes(code)) throw new StoreConfigError(MISSING);
+  // The table is there but the age column is not: the second migration has not been run.
+  if (code === '42703' || code === 'PGRST204') {
+    throw new StoreConfigError(
+      'The tradelines table is missing its age column. Run the 20261011120000_tradelines_age migration.',
+    );
+  }
   if (code === '42501') {
     throw new StoreConfigError(
       'Supabase refused the request. SUPABASE_SERVICE_ROLE_KEY must be the service role key, not the publishable one.',
@@ -53,7 +59,7 @@ function isRowId(id: string): boolean {
   return /^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id));
 }
 
-const COLUMNS = 'id, issuer, name, credit_limit, open_date';
+const COLUMNS = 'id, issuer, name, credit_limit, open_date, age_years';
 
 function toTradeline(row: Record<string, unknown>): Tradeline | null {
   if (!isIssuerKey(row.issuer)) return null;
@@ -63,6 +69,8 @@ function toTradeline(row: Record<string, unknown>): Tradeline | null {
     name: String(row.name ?? ''),
     creditLimit: Number(row.credit_limit ?? 0),
     openDate: String(row.open_date ?? '').slice(0, 10),
+    // As stored, which is as given. Null stays null: no age is not zero.
+    age: row.age_years === null || row.age_years === undefined ? null : Number(row.age_years),
   };
 }
 
@@ -109,6 +117,7 @@ function forInsert(issuer: IssuerKey, row: TradelineInput, by: string) {
     name: row.name,
     credit_limit: row.creditLimit,
     open_date: row.openDate,
+    age_years: row.age,
     created_by: by,
     updated_by: by,
   };
@@ -131,7 +140,12 @@ export async function replaceTradelines(issuer: IssuerKey, rows: TradelineInput[
   requireStore();
   const { data, error } = await getSupabaseClient().rpc('replace_tradelines', {
     p_issuer: issuer,
-    p_rows: rows.map((row) => ({ name: row.name, credit_limit: row.creditLimit, open_date: row.openDate })),
+    p_rows: rows.map((row) => ({
+      name: row.name,
+      credit_limit: row.creditLimit,
+      open_date: row.openDate,
+      age_years: row.age,
+    })),
     p_by: by,
   });
   if (error) fail('replacing the tradelines', error);
@@ -148,6 +162,7 @@ export async function updateTradeline(id: string, row: TradelineInput, by: strin
       name: row.name,
       credit_limit: row.creditLimit,
       open_date: row.openDate,
+      age_years: row.age,
       updated_at: new Date().toISOString(),
       updated_by: by,
     })

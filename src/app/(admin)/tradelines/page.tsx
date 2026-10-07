@@ -18,8 +18,8 @@ type PageProps = {
  *
  * Six tables, one per issuer, and the address says which is showing so it
  * survives a reload and can be linked to. Each row is a tradeline's name, its
- * credit limit and the day it was opened; its age is worked out from that day
- * as the page is drawn.
+ * credit limit, the day it was opened and its age, the last shown exactly as
+ * it was pasted or typed.
  *
  * Admins only, for now. It is being loaded, and affiliates on the Tradelines
  * service are to be shown it later. requireAdmin sends anybody else home, and
@@ -55,8 +55,9 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
     );
   }
 
-  // The day ages are worked out against, decided once here and handed to the
-  // table, so the server's first paint and the browser agree on it.
+  // Today, for the dialogs: to read a paste's two-digit years and to stop an
+  // open date being set in the future. Decided once here so the server's
+  // first paint and the browser agree on it. No age is worked out from it.
   const today = new Date().toISOString().slice(0, 10);
 
   return (
@@ -64,8 +65,8 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
       <div className="rise">
         <h1 className="font-display text-[26px] leading-[1.05]">Tradelines Table</h1>
         <p className="mt-3 max-w-[680px] text-[13px] leading-relaxed text-ink-soft">
-          The tradelines on offer, by issuer. Choose an issuer to see its table. Each tradeline&rsquo;s age is worked out
-          from its open date, so it is always current.
+          The tradelines on offer, by issuer. Choose an issuer to see its table. Ages are shown exactly as they were
+          pasted or entered.
         </p>
       </div>
 

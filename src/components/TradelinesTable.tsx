@@ -7,13 +7,13 @@ import { Modal } from '@/components/Modal';
 import { BusyLabel } from '@/components/Spinner';
 import { TableScroller } from '@/components/TableScroller';
 import {
-  ageYears,
   checkTradeline,
   formatAge,
   formatLimit,
   formatOpenDate,
   issuerLabel,
   MAX_NAME,
+  parseAge,
   parseLimit,
   parsePaste,
   sortTradelines,
@@ -97,10 +97,10 @@ type Editing = { mode: 'add' } | { mode: 'edit'; row: Tradeline } | null;
 /**
  * One issuer's tradelines, and the ways an admin keeps them up to date.
  *
- * Four columns, the sheet's own. The fourth, age, is not stored: it is today
- * minus the open date, worked out as the table is drawn, so it is right every
- * morning without anybody touching it. `today` comes from the server with the
- * rows, so the first paint and the browser agree on what day it is.
+ * Four columns, the sheet's own. The fourth, age, is the sheet's figure shown
+ * exactly as it was pasted or typed; nothing here works it out. `today` is
+ * only for reading a paste's two-digit years and for stopping an open date
+ * being set in the future.
  *
  * Rows start in the order they were entered, which is the order of the sheet
  * they came from. A heading sorts by its column, and pressing it again turns
@@ -210,7 +210,7 @@ export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; ro
                   <td className="tnum whitespace-nowrap px-5 py-3 text-right text-[13px] text-ink-soft">
                     {formatOpenDate(row.openDate)}
                   </td>
-                  <td className="tnum px-5 py-3 text-right text-[13px] text-ink">{formatAge(ageYears(row.openDate, today))}</td>
+                  <td className="tnum px-5 py-3 text-right text-[13px] text-ink">{formatAge(row.age)}</td>
                   <td className="whitespace-nowrap px-5 py-2 text-right">
                     <span className="inline-flex justify-end gap-1.5">
                       <button
@@ -273,7 +273,8 @@ export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; ro
  *
  * The limit is typed the way it is written, "$3,000" or "3000", and read the
  * way a paste is. The date is a date field, so there is no format to get
- * wrong, and it cannot be set past today.
+ * wrong, and it cannot be set past today. The age is typed too, and saved as
+ * typed: it is not filled in from the date.
  */
 function TradelineForm({
   issuer,
@@ -292,6 +293,7 @@ function TradelineForm({
   const [name, setName] = useState(row?.name ?? '');
   const [limit, setLimit] = useState(row ? formatLimit(row.creditLimit) : '');
   const [openDate, setOpenDate] = useState(row?.openDate ?? '');
+  const [age, setAge] = useState(row ? formatAge(row.age) : '');
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -299,8 +301,10 @@ function TradelineForm({
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const input = { name: name.trim(), creditLimit: parseLimit(limit) ?? 0, openDate };
+    const input = { name: name.trim(), creditLimit: parseLimit(limit) ?? 0, openDate, age: parseAge(age) };
     const found = checkTradeline(input, today);
+    // Something typed that is not a number is a mistake to say, not a blank.
+    if (age.trim() !== '' && input.age === null) found.age = 'Enter the age in years as a number, such as 13.38, or leave it blank.';
     if (Object.keys(found).length > 0) {
       setProblems(found);
       return;
@@ -339,7 +343,7 @@ function TradelineForm({
           {problems.name ? <span className="field-error">{problems.name}</span> : null}
         </label>
 
-        <div className="grid gap-x-5 gap-y-6 sm:grid-cols-2">
+        <div className="grid gap-x-5 gap-y-6 sm:grid-cols-3">
           <label className="block">
             <span className="field-label">Credit limit</span>
             <input
@@ -368,10 +372,26 @@ function TradelineForm({
               disabled={busy}
               aria-invalid={problems.openDate ? true : undefined}
             />
-            {problems.openDate ? (
-              <span className="field-error">{problems.openDate}</span>
+            {problems.openDate ? <span className="field-error">{problems.openDate}</span> : null}
+          </label>
+
+          <label className="block">
+            <span className="field-label">Age (Years)</span>
+            <input
+              name="age"
+              className="field mt-1.5"
+              value={age}
+              onChange={(e) => setAge(e.target.value)}
+              placeholder="13.38356164"
+              inputMode="decimal"
+              autoComplete="off"
+              disabled={busy}
+              aria-invalid={problems.age ? true : undefined}
+            />
+            {problems.age ? (
+              <span className="field-error">{problems.age}</span>
             ) : (
-              <span className="field-note">Its age is worked out from this.</span>
+              <span className="field-note">Shown exactly as typed. It is not worked out from the date.</span>
             )}
           </label>
         </div>
@@ -396,12 +416,13 @@ const PREVIEW_ROWS = 8;
 
 /**
  * What a paste was read as, before anything is saved: how many tradelines,
- * the first few of them, and every row that could not be read, with its line.
+ * the first few of them with the age as it was pasted, and every row that
+ * could not be read, with its line.
  *
  * No state, so every shape it takes is rendered directly by
  * scripts/tradelines-render-checks.tsx.
  */
-export function PastePreview({ result, today }: { result: PasteResult; today: string }) {
+export function PastePreview({ result }: { result: PasteResult }) {
   const { rows, problems } = result;
   if (rows.length === 0 && problems.length === 0) return null;
   const more = rows.length - PREVIEW_ROWS;
@@ -421,7 +442,7 @@ export function PastePreview({ result, today }: { result: PasteResult; today: st
                     <td className="px-3 py-1.5 text-ink">{row.name}</td>
                     <td className="tnum px-3 py-1.5 text-right text-ink">{formatLimit(row.creditLimit)}</td>
                     <td className="tnum whitespace-nowrap px-3 py-1.5 text-right text-ink-soft">{formatOpenDate(row.openDate)}</td>
-                    <td className="tnum px-3 py-1.5 text-right text-ink-soft">{formatAge(ageYears(row.openDate, today))}</td>
+                    <td className="tnum px-3 py-1.5 text-right text-ink-soft">{formatAge(row.age)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -520,17 +541,17 @@ function PasteDialog({
             className="field mt-1.5 min-h-[150px] py-2 font-mono text-[12px] leading-relaxed"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={'Capital One Walmart\t$1,524\t31-Dec-17'}
+            placeholder={'Capital One Walmart\t$1,524\t31-Dec-17\t7.654794521'}
             spellCheck={false}
             disabled={busy}
           />
           <span className="field-note">
-            Copy the Issuer/Type, Credit Limit and Open Date columns and paste them here. A header row and an Age column are
-            fine; the age is worked out from the open date.
+            Copy the Issuer/Type, Credit Limit, Open Date and Age (Years) columns and paste them here. A header row is
+            fine. The age is saved exactly as pasted.
           </span>
         </label>
 
-        <PastePreview result={result} today={today} />
+        <PastePreview result={result} />
 
         <fieldset className="block">
           <legend className="field-label">What to do with them</legend>

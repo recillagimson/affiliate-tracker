@@ -7,12 +7,15 @@
 // wrong limit or the wrong age. The first fixture is the Capital One list
 // exactly as it was handed over: one value per line, header included.
 //
+// The age is shown exactly as it was pasted or typed, never worked out from
+// the open date: the owner's sheet is the source of the figure, and the table
+// must show the sheet's number, not this app's opinion of it.
+//
 //   npx tsx scripts/tradelines-checks.ts
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ageYears,
   checkTradeline,
   formatAge,
   formatLimit,
@@ -21,6 +24,7 @@ import {
   issuerFrom,
   issuerLabel,
   MAX_PASTE_ROWS,
+  parseAge,
   parseLimit,
   parseOpenDate,
   parsePaste,
@@ -88,14 +92,18 @@ check('words are not a date', parseOpenDate('Open Date', TODAY) === '' && parseO
 check('shown unambiguously', formatOpenDate('2012-04-10') === '10 Apr 2012');
 
 console.log('- age -');
-check('the sample\'s own figure, to the digit it was given', Math.abs(ageYears('2012-04-10', TODAY) - 13.38356164) < 1e-8, ageYears('2012-04-10', TODAY));
-check('another from the sample', Math.abs(ageYears('2017-12-31', TODAY) - 7.654794521) < 1e-8);
-check('and the oldest', Math.abs(ageYears('2009-03-15', TODAY) - 16.45753425) < 1e-8);
-check('opened today is zero', ageYears(TODAY, TODAY) === 0);
-check('a date that cannot be read has no age', Number.isNaN(ageYears('nonsense', TODAY)));
-check('shown to two places', formatAge(13.38356164) === '13.38' && formatAge(0) === '0.00');
-check('nothing shown for no age', formatAge(Number.NaN) === '');
-check('it grows as the days pass', ageYears('2012-04-10', '2026-10-07') > ageYears('2012-04-10', TODAY));
+check('an age is read as it is written', parseAge('13.38356164') === 13.38356164);
+check('a whole number', parseAge('7') === 7);
+check('with spaces round it', parseAge(' 16.45753425 ') === 16.45753425);
+check('a number is a number', parseAge(12.5) === 12.5);
+check('zero is an age', parseAge('0') === 0);
+check('nothing is no age', parseAge('') === null && parseAge(undefined) === null && parseAge(null) === null);
+check('words are no age', parseAge('Age (Years)') === null && parseAge('about 13') === null);
+check('a negative is no age', parseAge('-3') === null);
+check('an absurd one is no age', parseAge('1200') === null);
+check('shown exactly as it was given, every digit', formatAge(13.38356164) === '13.38356164' && formatAge(15.1890411) === '15.1890411' && formatAge(7.654794521) === '7.654794521');
+check('a whole number is shown whole', formatAge(7) === '7');
+check('no age shows nothing', formatAge(null) === '');
 
 console.log('- the list as it was handed over -');
 const HANDED_OVER = `Issuer/Type
@@ -163,20 +171,24 @@ const handed = parsePaste(HANDED_OVER, TODAY);
 check('all fourteen are read', handed.rows.length === 14, handed.rows.length);
 check('with nothing it could not read', handed.problems.length === 0, handed.problems);
 check('the header is not a tradeline', !handed.rows.some((row) => /issuer/i.test(row.name)));
-check('the first is the first', JSON.stringify(handed.rows[0]) === JSON.stringify({ name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10' }), handed.rows[0]);
+check('the first is the first', JSON.stringify(handed.rows[0]) === JSON.stringify({ name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: 13.38356164 }), handed.rows[0]);
 check('the comma in a limit is read', handed.rows[3]!.name === 'Capital One Walmart' && handed.rows[3]!.creditLimit === 1524 && handed.rows[3]!.openDate === '2017-12-31');
 check('the last is the last', handed.rows[13]!.creditLimit === 500 && handed.rows[13]!.openDate === '2009-03-15');
 check('the same tradeline twice is two rows, as it was in the sheet', handed.rows.filter((row) => row.name === 'Capital One/Cabelas' && row.openDate === '2012-04-10').length === 2);
-check('the pasted ages are not kept: every one is worked out again', handed.rows.every((row) => !('age' in row)));
+const EXPECTED_AGES = [13.38356164, 11.26849315, 13.38356164, 7.654794521, 13.78630137, 12.46575342, 12.65753425, 14.40821918, 14.40821918, 13.78356164, 13.78630137, 15.1890411, 16.10410959, 16.45753425];
+check('every pasted age is kept exactly as it was pasted', handed.rows.map((row) => row.age).join() === EXPECTED_AGES.join(), handed.rows.map((row) => row.age));
+check('and is shown exactly as it was pasted', handed.rows.map((row) => formatAge(row.age)).join() === '13.38356164,11.26849315,13.38356164,7.654794521,13.78630137,12.46575342,12.65753425,14.40821918,14.40821918,13.78356164,13.78630137,15.1890411,16.10410959,16.45753425');
+check('none of them was worked out from the open date', handed.rows[0]!.age === handed.rows[2]!.age && handed.rows[0]!.age !== 14.5);
 
 console.log('- copied straight from a spreadsheet -');
 const tabbed = parsePaste('Issuer/Type\tCredit Limit\tOpen Date\tAge (Years)\nCiti Double Cash\t$7,500\t3-Mar-15\t10.5\nCiti Simplicity\t$2,000\t2016-01-20\t9.6\n', TODAY);
 check('two rows, header skipped', tabbed.rows.length === 2 && tabbed.problems.length === 0, tabbed);
-check('read across', tabbed.rows[0]!.name === 'Citi Double Cash' && tabbed.rows[0]!.creditLimit === 7500 && tabbed.rows[0]!.openDate === '2015-03-03');
+check('read across, age included', tabbed.rows[0]!.name === 'Citi Double Cash' && tabbed.rows[0]!.creditLimit === 7500 && tabbed.rows[0]!.openDate === '2015-03-03' && tabbed.rows[0]!.age === 10.5 && tabbed.rows[1]!.age === 9.6);
 const noAge = parsePaste('PNC Cash Rewards\t$4,000\t5/6/2014\n', TODAY);
 check('three columns, with no age, is fine', noAge.rows.length === 1 && noAge.rows[0]!.openDate === '2014-05-06');
+check('and that row simply has no age: none is made up for it', noAge.rows[0]!.age === null);
 const noHeader = parsePaste('Discover it\n$2,500\n1-Feb-13\nDiscover Miles\n$6,000\n9-Sep-16\n', TODAY);
-check('one value per line with no ages and no header', noHeader.rows.length === 2 && noHeader.problems.length === 0, noHeader);
+check('one value per line with no ages and no header', noHeader.rows.length === 2 && noHeader.problems.length === 0 && noHeader.rows.every((row) => row.age === null), noHeader);
 const windows = parsePaste('US Bank Cash+\t$3,000\t1-Jan-14\r\nUS Bank Altitude\t$9,000\t1-Jun-18\r\n', TODAY);
 check('Windows line endings', windows.rows.length === 2 && windows.rows[1]!.name === 'US Bank Altitude');
 check('blank lines between rows are ignored', parsePaste('\n\nPNC\t$1,000\t1-Jan-14\n\n\nPNC Core\t$2,000\t1-Jan-15\n\n', TODAY).rows.length === 2);
@@ -195,7 +207,7 @@ const many = parsePaste(Array.from({ length: MAX_PASTE_ROWS + 5 }, (_, n) => `Ca
 check('more than fits in one paste is said, not silently cut', many.rows.length === MAX_PASTE_ROWS && many.problems.some((problem) => /at a time/.test(problem.reason)));
 
 console.log('- one tradeline -');
-const good = { name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15' };
+const good = { name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: 13.78630137 };
 check('a good one has no problems', Object.keys(checkTradeline(good, TODAY)).length === 0);
 check('no name', checkTradeline({ ...good, name: '  ' }, TODAY).name !== undefined);
 check('a name too long', checkTradeline({ ...good, name: 'x'.repeat(121) }, TODAY).name !== undefined);
@@ -204,9 +216,15 @@ check('an absurd limit', checkTradeline({ ...good, creditLimit: 50_000_000 }, TO
 check('no date', checkTradeline({ ...good, openDate: '' }, TODAY).openDate !== undefined);
 check('a date tomorrow', checkTradeline({ ...good, openDate: '2025-08-26' }, TODAY).openDate !== undefined);
 check('a date today is fine', checkTradeline({ ...good, openDate: TODAY }, TODAY).openDate === undefined);
-for (const text of Object.values(checkTradeline({ name: '', creditLimit: 0, openDate: '' }, TODAY))) said.push(text);
-const typed = readTradelineInput({ name: ' Capital One ', creditLimit: '$3,000', openDate: '15-Nov-11' }, TODAY);
-check('a form\'s text is read the way a paste is', typed.ok && typed.value.name === 'Capital One' && typed.value.creditLimit === 3000 && typed.value.openDate === '2011-11-15');
+check('no age is allowed', checkTradeline({ ...good, age: null }, TODAY).age === undefined);
+check('an absurd age is caught', checkTradeline({ ...good, age: 500 }, TODAY).age !== undefined);
+for (const text of Object.values(checkTradeline({ name: '', creditLimit: 0, openDate: '', age: 500 }, TODAY))) said.push(text);
+const typed = readTradelineInput({ name: ' Capital One ', creditLimit: '$3,000', openDate: '15-Nov-11', age: '13.78630137' }, TODAY);
+check('a form\'s text is read the way a paste is', typed.ok && typed.value.name === 'Capital One' && typed.value.creditLimit === 3000 && typed.value.openDate === '2011-11-15' && typed.value.age === 13.78630137);
+const blankAge = readTradelineInput({ name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: '' }, TODAY);
+check('a blank age is no age, not zero', blankAge.ok && blankAge.value.age === null);
+const wordAge = readTradelineInput({ name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: 'old' }, TODAY);
+check('an age that is not a number is refused, not dropped', !wordAge.ok && wordAge.fields.age !== undefined);
 const numeric = readTradelineInput({ name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15' }, TODAY);
 check('and so are a number and a plain date', numeric.ok && numeric.value.creditLimit === 3000);
 const wrong = readTradelineInput({ name: 'Capital One', creditLimit: 'lots', openDate: 'soon' }, TODAY);
@@ -215,16 +233,17 @@ check('something that is not a tradeline at all is refused', !readTradelineInput
 
 console.log('- sorting -');
 const rows: Tradeline[] = [
-  { id: '1', issuer: 'capital-one', name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15' },
-  { id: '2', issuer: 'capital-one', name: 'Capital One Walmart', creditLimit: 1524, openDate: '2017-12-31' },
-  { id: '3', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10' },
-  { id: '4', issuer: 'capital-one', name: 'capital one', creditLimit: 5000, openDate: '2011-04-02' },
+  { id: '1', issuer: 'capital-one', name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: 13.78 },
+  { id: '2', issuer: 'capital-one', name: 'Capital One Walmart', creditLimit: 1524, openDate: '2017-12-31', age: null },
+  { id: '3', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: 20 },
+  { id: '4', issuer: 'capital-one', name: 'capital one', creditLimit: 5000, openDate: '2011-04-02', age: 14.4 },
 ];
 const ids = (key: Parameters<typeof sortTradelines>[1], dir: 'asc' | 'desc') => sortTradelines(rows, key, dir).map((row) => row.id).join();
 check('as entered, by default', ids('entered', 'asc') === '1,2,3,4');
-check('oldest first', ids('age', 'desc') === '4,1,3,2');
-check('newest first', ids('age', 'asc') === '2,3,1,4');
-check('the open date runs the other way from the age', ids('openDate', 'asc') === ids('age', 'desc'));
+check('highest age first, by the age on the row and not by its date', ids('age', 'desc') === '3,4,1,2');
+check('lowest age first', ids('age', 'asc') === '1,4,3,2');
+check('a row with no age goes last either way', ids('age', 'desc').endsWith('2') && ids('age', 'asc').endsWith('2'));
+check('earliest opened first', ids('openDate', 'asc') === '4,1,3,2');
 check('highest limit first', ids('creditLimit', 'desc') === '4,1,2,3');
 check('by name, ignoring case, ties in the order entered', ids('name', 'asc') === '1,4,2,3');
 check('sorting does not disturb the list it was given', rows.map((row) => row.id).join() === '1,2,3,4');
@@ -240,6 +259,13 @@ check('row level security is on', sql.includes('alter table public.tradelines en
 check('and it is revoked from the public roles', sql.includes('revoke all on public.tradelines from anon, authenticated'));
 check('replacing an issuer\'s table is one transaction', sql.includes('create or replace function public.replace_tradelines('));
 check('it can be run twice', sql.includes('create table if not exists public.tradelines'));
+const AGE = join(__dirname, '..', 'supabase', 'migrations', '20261011120000_tradelines_age.sql');
+check('the age migration exists under its name', existsSync(AGE));
+const ageSql = existsSync(AGE) ? readFileSync(AGE, 'utf8') : '';
+check('the age is a column of its own', /add column if not exists age_years numeric/.test(ageSql));
+check('kept with every digit: no rounding scale on it', !/age_years numeric\s*\(/.test(ageSql));
+check('a row may have none', !/age_years numeric[^;]*not null/.test(ageSql));
+check('replacing a table carries the ages', /function public\.replace_tradelines\(/.test(ageSql) && /age_years/.test(ageSql.slice(ageSql.indexOf('function public.replace_tradelines('))));
 
 check('there was something to read', said.length > 10, said.length);
 check('no em or en dash anywhere', said.every((text) => !/[–—]/.test(text)));

@@ -33,9 +33,9 @@ function render(node: ReactNode): string {
 
 const TODAY = '2025-08-25';
 const rows: Tradeline[] = [
-  { id: '1', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10' },
-  { id: '2', issuer: 'capital-one', name: 'Capital One Walmart', creditLimit: 1524, openDate: '2017-12-31' },
-  { id: '3', issuer: 'capital-one', name: 'Capital One <b>', creditLimit: 5000, openDate: '2011-04-02' },
+  { id: '1', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: 13.38356164 },
+  { id: '2', issuer: 'capital-one', name: 'Capital One Walmart', creditLimit: 1524, openDate: '2017-12-31', age: 7.654794521 },
+  { id: '3', issuer: 'capital-one', name: 'Capital One <b>', creditLimit: 5000, openDate: '2011-04-02', age: null },
 ];
 
 console.log('- the navigation -');
@@ -68,7 +68,11 @@ for (const heading of ['Issuer/Type', 'Credit Limit', 'Open Date', 'Age (Years)'
 check('a tradeline is named', table.includes('Capital One/Cabelas'));
 check('its limit is written as money', table.includes('$1,524') && table.includes('$500'));
 check('its open date is written out', table.includes('10 Apr 2012'));
-check('its age is worked out, to two places', table.includes('13.38') && table.includes('7.65'));
+check('its age is the pasted figure, every digit of it', table.includes('>13.38356164<') && table.includes('>7.654794521<'));
+// Rendered a year after the sheet was made: a worked-out age would be 14.5.
+check('and is not worked out from the open date', !render(<TradelinesTable issuer="capital-one" rows={rows} today="2026-10-07" />).includes('14.5'));
+check('a tradeline with no age shows none', !table.includes('NaN') && !table.includes('>0<'));
+check('an age can be typed when adding one', table.includes('name="age"'));
 check('a name is text, never markup', !table.includes('<b>') && table.includes('&lt;b&gt;'));
 check('each row can be edited and deleted', table.split('>Edit<').length === 4 && table.split('>Delete<').length === 4);
 check('one can be added', table.includes('Add tradeline'));
@@ -79,13 +83,13 @@ check('an empty table says so, and for which issuer', empty.includes('No tradeli
 check('and still offers to add some', empty.includes('Paste rows') && empty.includes('Add tradeline'));
 
 console.log('- what a paste will do -');
-const good = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\nCiti B\t$2,000\t20-Jan-16\n', TODAY)} today={TODAY} />);
+const good = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\t10.48493151\nCiti B\t$2,000\t20-Jan-16\n', TODAY)} />);
 check('it says how many rows were read', good.includes('2 tradelines read'));
-check('and shows them', good.includes('Citi A') && good.includes('$7,500') && good.includes('3 Mar 2015'));
-const mixed = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\nCiti B\tcall us\t3-Mar-15\n', TODAY)} today={TODAY} />);
+check('and shows them, with the age as pasted', good.includes('Citi A') && good.includes('$7,500') && good.includes('3 Mar 2015') && good.includes('10.48493151'));
+const mixed = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\nCiti B\tcall us\t3-Mar-15\n', TODAY)} />);
 check('a row it could not read is listed with its line', mixed.includes('Line 2') && mixed.includes('credit limit'));
 check('and counted', mixed.includes('1 row could not be read'));
-const nothing = render(<PastePreview result={parsePaste('', TODAY)} today={TODAY} />);
+const nothing = render(<PastePreview result={parsePaste('', TODAY)} />);
 check('nothing pasted shows nothing', !nothing.includes('read'));
 
 check('no em or en dash anywhere', rendered.every((html) => !/[–—]/.test(html)));

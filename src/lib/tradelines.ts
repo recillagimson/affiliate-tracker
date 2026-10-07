@@ -2,13 +2,16 @@
  * The tradelines table: which issuers there are, how a pasted spreadsheet
  * becomes rows, and how old a tradeline is.
  *
- * A tradeline here is three facts: what it is (an issuer and type, such as
- * "Capital One Walmart"), its credit limit, and the day it was opened. Its age
- * is not a fourth. The sheet this came from carried an "Age (Years)" column,
- * but that is the open date and today's date subtracted, and a number typed in
- * once is wrong the next morning. So the age is never stored and never read
- * from a paste: ageYears works it out each time, the same way the sheet did
- * (days divided by 365), which is why it matches the sheet to the last digit.
+ * A tradeline here is four facts: what it is (an issuer and type, such as
+ * "Capital One Walmart"), its credit limit, the day it was opened, and its
+ * age in years.
+ *
+ * The age is the sheet's own figure, kept and shown exactly as it was pasted
+ * or typed. It is never worked out here. An earlier version calculated it
+ * from the open date so that it would always be current, and the result was a
+ * table that disagreed with the sheet it had just been loaded from; the sheet
+ * is the source of that number, so the table shows the sheet's number. A row
+ * pasted without an age has none, and shows none.
  *
  * Nearly every row arrives by paste, copied out of a spreadsheet written for
  * people. So parsePaste is forgiving about shape (copied cells, or one value
@@ -18,7 +21,8 @@
  * quoted to somebody wrongly.
  *
  * Pure: text and dates in, rows out. `today` is always passed in, as a
- * YYYY-MM-DD day, so nothing here depends on when it runs.
+ * YYYY-MM-DD day, and is used only to read two-digit years and to refuse an
+ * open date in the future.
  * scripts/tradelines-checks.ts pins it against the Capital One list exactly as
  * it was handed over.
  */
@@ -65,15 +69,20 @@ export type Tradeline = {
   creditLimit: number;
   /** The day it was opened, YYYY-MM-DD. */
   openDate: string;
+  /** Its age in years, exactly as given. Null when none was. */
+  age: number | null;
 };
 
 /** A tradeline before it has been stored: what a form or a paste produces. */
-export type TradelineInput = { name: string; creditLimit: number; openDate: string };
+export type TradelineInput = { name: string; creditLimit: number; openDate: string; age: number | null };
 
 export const MAX_NAME = 120;
 
 /** More than any real limit, and few enough digits that a slipped key is caught. */
 export const MAX_LIMIT = 10_000_000;
+
+/** Older than any account could be, and enough to catch a figure pasted into the wrong column. */
+export const MAX_AGE = 150;
 
 /** One paste. A whole issuer's list is a few dozen rows; this is room to spare. */
 export const MAX_PASTE_ROWS = 500;
@@ -193,19 +202,28 @@ function utcDays(day: string): number {
   return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86_400_000;
 }
 
+/* -------------------------------------------------------------------- age --- */
+
 /**
- * How old a tradeline is, in years, as of `today`.
- *
- * Days divided by 365, which is how the sheet works it out and why this
- * agrees with its "Age (Years)" column to the last digit. NaN when either
- * date cannot be read.
+ * An age in years as a sheet writes it: "13.38356164". Null for nothing, and
+ * for anything that is not a plain number from 0 to MAX_AGE.
  */
-export function ageYears(openDate: string, today: string): number {
-  return (utcDays(today) - utcDays(openDate)) / 365;
+export function parseAge(raw: unknown): number | null {
+  if (typeof raw === 'number') return Number.isFinite(raw) && raw >= 0 && raw <= MAX_AGE ? raw : null;
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  const years = Number(text);
+  return Number.isFinite(years) && years <= MAX_AGE ? years : null;
 }
 
-export function formatAge(years: number): string {
-  return Number.isFinite(years) ? years.toFixed(2) : '';
+/**
+ * An age as it is shown: the number that was given, with every digit it was
+ * given with, and nothing for a tradeline that has none. Not rounded, because
+ * the point is that the table and the sheet read the same.
+ */
+export function formatAge(years: number | null): string {
+  return years === null || !Number.isFinite(years) ? '' : String(years);
 }
 
 /* ----------------------------------------------------------- one tradeline --- */
@@ -228,6 +246,10 @@ export function checkTradeline(input: TradelineInput, today: string): Record<str
   } else if (input.openDate > today) {
     problems.openDate = 'The open date is in the future. Check the year.';
   }
+
+  if (input.age !== null && (!Number.isFinite(input.age) || input.age < 0 || input.age > MAX_AGE)) {
+    problems.age = 'Enter the age in years as a number, such as 13.38, or leave it blank.';
+  }
   return problems;
 }
 
@@ -247,8 +269,14 @@ export function readTradelineInput(
     name: typeof item.name === 'string' ? item.name.replace(/\s+/g, ' ').trim() : '',
     creditLimit: parseLimit(item.creditLimit) ?? 0,
     openDate: parseOpenDate(item.openDate, today),
+    age: parseAge(item.age),
   };
   const fields = checkTradeline(input, today);
+  // A blank age is no age. Anything else that did not read as one is a
+  // mistake to say, not a value to drop quietly.
+  const given = item.age;
+  const blank = given === undefined || given === null || (typeof given === 'string' && given.trim() === '');
+  if (!blank && input.age === null) fields.age = 'Enter the age in years as a number, such as 13.38, or leave it blank.';
   return Object.keys(fields).length === 0 ? { ok: true, value: input } : { ok: false, fields };
 }
 
@@ -271,13 +299,23 @@ function isHeader(text: string): boolean {
 }
 
 /** What is wrong with one pasted row, as one sentence, or '' when nothing is. */
-function rowProblem(name: string, limit: string, date: string, today: string): { reason: string; value: TradelineInput | null } {
+function rowProblem(
+  name: string,
+  limit: string,
+  date: string,
+  age: string,
+  today: string,
+): { reason: string; value: TradelineInput | null } {
   if (!name.trim()) return { reason: 'This row has no name.', value: null };
   const creditLimit = parseLimit(limit);
   if (creditLimit === null) return { reason: `The credit limit could not be read: "${limit.trim()}".`, value: null };
   const openDate = parseOpenDate(date, today);
   if (!openDate) return { reason: `The open date could not be read: "${date.trim()}".`, value: null };
-  const value = { name: name.replace(/\s+/g, ' ').trim(), creditLimit, openDate };
+  // The age column is optional. Given, it has to be a number; a cell that is
+  // there but unreadable is reported, never swapped for a worked-out figure.
+  const years = age.trim() === '' ? null : parseAge(age);
+  if (age.trim() !== '' && years === null) return { reason: `The age could not be read: "${age.trim()}".`, value: null };
+  const value = { name: name.replace(/\s+/g, ' ').trim(), creditLimit, openDate, age: years };
   const found = Object.values(checkTradeline(value, today));
   return found.length > 0 ? { reason: found[0]!, value: null } : { reason: '', value };
 }
@@ -290,7 +328,8 @@ function rowProblem(name: string, limit: string, date: string, today: string): {
  * line. The same table copied out of a chat or a document comes as one value
  * per line: a name, a limit, a date, and sometimes the age. Either may start
  * with the sheet's header, which is skipped, and either may carry the age
- * column, which is ignored: see the note at the top of this file.
+ * column, which is kept exactly as written: see the note at the top of this
+ * file.
  *
  * Every row that could be read is returned, and every one that could not is
  * reported with its line, so a paste with one bad row still loads the rest and
@@ -302,8 +341,8 @@ export function parsePaste(text: string, today: string): PasteResult {
   const problems: PasteProblem[] = [];
   let dropped = 0;
 
-  function take(line: number, shown: string, name: string, limit: string, date: string) {
-    const { reason, value } = rowProblem(name, limit, date, today);
+  function take(line: number, shown: string, name: string, limit: string, date: string, age: string) {
+    const { reason, value } = rowProblem(name, limit, date, age, today);
     if (!value) {
       problems.push({ line, text: shown, reason });
       return;
@@ -321,7 +360,7 @@ export function parsePaste(text: string, today: string): PasteResult {
       const cells = raw.split('\t').map((cell) => cell.trim());
       // The header: its second cell names a column instead of holding an amount.
       if (isHeader(cells[0] ?? '') && parseLimit(cells[1] ?? '') === null) return;
-      take(index + 1, cells.filter(Boolean).join(' | '), cells[0] ?? '', cells[1] ?? '', cells[2] ?? '');
+      take(index + 1, cells.filter(Boolean).join(' | '), cells[0] ?? '', cells[1] ?? '', cells[2] ?? '', cells[3] ?? '');
     });
   } else {
     const filled = lines.map((raw, index) => ({ text: raw.trim(), line: index + 1 })).filter((entry) => entry.text !== '');
@@ -340,8 +379,12 @@ export function parsePaste(text: string, today: string): PasteResult {
       at += 3;
       // The age, when the sheet's fourth column came along. A bare number
       // straight after a date can only be that.
-      if (at < filled.length && /^\d+(\.\d+)?$/.test(filled[at]!.text)) at += 1;
-      take(name.line, `${name.text} | ${limit.text} | ${date.text}`, name.text, limit.text, date.text);
+      let age = '';
+      if (at < filled.length && /^\d+(\.\d+)?$/.test(filled[at]!.text)) {
+        age = filled[at]!.text;
+        at += 1;
+      }
+      take(name.line, [name.text, limit.text, date.text, age].filter(Boolean).join(' | '), name.text, limit.text, date.text, age);
     }
   }
 
@@ -362,20 +405,24 @@ export type TradelineSort = 'entered' | 'name' | 'creditLimit' | 'openDate' | 'a
 /**
  * The table in the order asked for. A new list; the one given is left alone.
  *
- * Age and open date are one fact read two ways, so sorting by one is sorting
- * by the other backwards. Anything that ties falls back to the order the rows
- * were entered in, so a sort never shuffles rows that are equal.
+ * Age sorts by the age on the row, which is the sheet's figure and need not
+ * agree with the open date. A row with no age goes last whichever way the
+ * sort runs: it is not the youngest and it is not the oldest, it is unknown.
+ * Anything that ties falls back to the order the rows were entered in, so a
+ * sort never shuffles rows that are equal.
  */
 export function sortTradelines(rows: Tradeline[], key: TradelineSort, direction: 'asc' | 'desc'): Tradeline[] {
   const entered = (a: Tradeline, b: Tradeline) => Number(a.id) - Number(b.id);
   const sign = direction === 'asc' ? 1 : -1;
   const by = (a: Tradeline, b: Tradeline): number => {
-    if (key === 'name') return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
-    if (key === 'creditLimit') return a.creditLimit - b.creditLimit;
-    if (key === 'openDate') return a.openDate < b.openDate ? -1 : a.openDate > b.openDate ? 1 : 0;
-    // Older means an earlier date, so age runs against the date.
-    if (key === 'age') return a.openDate < b.openDate ? 1 : a.openDate > b.openDate ? -1 : 0;
-    return entered(a, b);
+    if (key === 'name') return sign * a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+    if (key === 'creditLimit') return sign * (a.creditLimit - b.creditLimit);
+    if (key === 'openDate') return sign * (a.openDate < b.openDate ? -1 : a.openDate > b.openDate ? 1 : 0);
+    if (key === 'age') {
+      if (a.age === null || b.age === null) return a.age === b.age ? 0 : a.age === null ? 1 : -1;
+      return sign * (a.age - b.age);
+    }
+    return sign * entered(a, b);
   };
-  return [...rows].sort((a, b) => sign * by(a, b) || entered(a, b));
+  return [...rows].sort((a, b) => by(a, b) || entered(a, b));
 }
