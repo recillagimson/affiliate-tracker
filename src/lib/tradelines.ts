@@ -74,8 +74,12 @@ export type Tradeline = {
   creditLimit: number;
   /** The day it was opened, YYYY-MM-DD. */
   openDate: string;
-  /** Its age in years, exactly as given. Null when none was. */
-  age: number | null;
+  /**
+   * Its age in years, as the text it was given as: "16.10" stays "16.10".
+   * Kept as text because a number would drop that last zero, and the point is
+   * that the table reads exactly as the sheet does. Null when none was given.
+   */
+  age: string | null;
   /** What the user pays us for it. Null when no price has been set. */
   userPrice: number | null;
 };
@@ -92,7 +96,7 @@ export type TradelineInput = {
   name: string;
   creditLimit: number;
   openDate: string;
-  age: number | null;
+  age: string | null;
   userPrice: number | null;
 };
 
@@ -147,9 +151,13 @@ export function parsePrice(raw: unknown): number | null {
   return Number.isFinite(amount) && amount <= MAX_PRICE ? amount : null;
 }
 
-/** A price as money, and nothing for a tradeline that has none. */
+/**
+ * A price as money, always to the cent ("$700.00"), which is how the sheet
+ * writes it, and nothing for a tradeline that has none.
+ */
 export function formatPrice(amount: number | null): string {
-  return amount === null || !Number.isFinite(amount) ? '' : formatLimit(amount);
+  if (amount === null || !Number.isFinite(amount)) return '';
+  return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /* ------------------------------------------------------------------ dates --- */
@@ -247,25 +255,23 @@ function utcDays(day: string): number {
 /* -------------------------------------------------------------------- age --- */
 
 /**
- * An age in years as a sheet writes it: "13.38356164". Null for nothing, and
- * for anything that is not a plain number from 0 to MAX_AGE.
+ * An age in years as a sheet writes it, kept as it was written: "13.38",
+ * "11.268", "16.10". Null for nothing, and for anything that is not a plain
+ * number from 0 to MAX_AGE.
+ *
+ * Text out, not a number, so that every digit and every zero on the end
+ * survives. A number handed in (from a request) is written out as it is.
  */
-export function parseAge(raw: unknown): number | null {
-  if (typeof raw === 'number') return Number.isFinite(raw) && raw >= 0 && raw <= MAX_AGE ? raw : null;
-  if (typeof raw !== 'string') return null;
-  const text = raw.trim();
-  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+export function parseAge(raw: unknown): string | null {
+  const text = typeof raw === 'number' ? (Number.isFinite(raw) ? String(raw) : '') : typeof raw === 'string' ? raw.trim() : '';
+  if (!/^\d+(\.\d+)?$/.test(text) || text.length > 24) return null;
   const years = Number(text);
-  return Number.isFinite(years) && years <= MAX_AGE ? years : null;
+  return Number.isFinite(years) && years <= MAX_AGE ? text : null;
 }
 
-/**
- * An age as it is shown: the number that was given, with every digit it was
- * given with, and nothing for a tradeline that has none. Not rounded, because
- * the point is that the table and the sheet read the same.
- */
-export function formatAge(years: number | null): string {
-  return years === null || !Number.isFinite(years) ? '' : String(years);
+/** An age as it is shown: the text it was given as, and nothing for a tradeline that has none. */
+export function formatAge(age: string | null): string {
+  return age ?? '';
 }
 
 /* ----------------------------------------------------------- one tradeline --- */
@@ -289,7 +295,7 @@ export function checkTradeline(input: TradelineInput, today: string): Record<str
     problems.openDate = 'The open date is in the future. Check the year.';
   }
 
-  if (input.age !== null && (!Number.isFinite(input.age) || input.age < 0 || input.age > MAX_AGE)) {
+  if (input.age !== null && parseAge(input.age) === null) {
     problems.age = 'Enter the age in years as a number, such as 13.38, or leave it blank.';
   }
 
@@ -501,7 +507,8 @@ export function sortTradelines(rows: Tradeline[], key: TradelineSort, direction:
     if (key === 'creditLimit') return sign * (a.creditLimit - b.creditLimit);
     if (key === 'openDate') return sign * (a.openDate < b.openDate ? -1 : a.openDate > b.openDate ? 1 : 0);
     if (key === 'age' || key === 'userPrice') {
-      const [x, y] = [a[key], b[key]];
+      // The age is kept as text, so it is compared as the number it writes.
+      const [x, y] = key === 'age' ? [a.age === null ? null : Number(a.age), b.age === null ? null : Number(b.age)] : [a.userPrice, b.userPrice];
       if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
       return sign * (x - y);
     }

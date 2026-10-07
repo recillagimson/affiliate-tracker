@@ -84,7 +84,7 @@ check('words are no price', parsePrice('User Price') === null && parsePrice('cal
 check('a negative is no price', parsePrice('-50') === null);
 check('free is a price', parsePrice('$0') === 0);
 check('an absurd one is no price', parsePrice('$50,000,000') === null);
-check('shown as money', formatPrice(450) === '$450' && formatPrice(1250.5) === '$1,250.50' && formatPrice(0) === '$0');
+check('shown as money, always to the cent, the way the sheet writes it', formatPrice(700) === '$700.00' && formatPrice(1250.5) === '$1,250.50' && formatPrice(0) === '$0.00');
 check('no price shows nothing', formatPrice(null) === '');
 
 console.log('- dates -');
@@ -104,17 +104,18 @@ check('words are not a date', parseOpenDate('Open Date', TODAY) === '' && parseO
 check('shown unambiguously', formatOpenDate('2012-04-10') === '10 Apr 2012');
 
 console.log('- age -');
-check('an age is read as it is written', parseAge('13.38356164') === 13.38356164);
-check('a whole number', parseAge('7') === 7);
-check('with spaces round it', parseAge(' 16.45753425 ') === 16.45753425);
-check('a number is a number', parseAge(12.5) === 12.5);
-check('zero is an age', parseAge('0') === 0);
+check('an age is read as it is written', parseAge('13.38356164') === '13.38356164');
+check('a zero on the end is part of how it was written, and is kept', parseAge('16.10') === '16.10' && parseAge('13.380') === '13.380');
+check('a whole number', parseAge('7') === '7');
+check('with spaces round it', parseAge(' 16.45753425 ') === '16.45753425');
+check('a number is written out', parseAge(12.5) === '12.5');
+check('zero is an age', parseAge('0') === '0');
 check('nothing is no age', parseAge('') === null && parseAge(undefined) === null && parseAge(null) === null);
 check('words are no age', parseAge('Age (Years)') === null && parseAge('about 13') === null);
 check('a negative is no age', parseAge('-3') === null);
 check('an absurd one is no age', parseAge('1200') === null);
-check('shown exactly as it was given, every digit', formatAge(13.38356164) === '13.38356164' && formatAge(15.1890411) === '15.1890411' && formatAge(7.654794521) === '7.654794521');
-check('a whole number is shown whole', formatAge(7) === '7');
+check('shown exactly as it was given, every digit', formatAge('13.38356164') === '13.38356164' && formatAge('16.10') === '16.10' && formatAge('11.268') === '11.268');
+check('a whole number is shown whole', formatAge('7') === '7');
 check('no age shows nothing', formatAge(null) === '');
 
 console.log('- the list as it was handed over -');
@@ -183,7 +184,7 @@ const handed = parsePaste(HANDED_OVER, TODAY);
 check('all fourteen are read', handed.rows.length === 14, handed.rows.length);
 check('with nothing it could not read', handed.problems.length === 0, handed.problems);
 check('the header is not a tradeline', !handed.rows.some((row) => /issuer/i.test(row.name)));
-check('the first is the first', JSON.stringify(handed.rows[0]) === JSON.stringify({ name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: 13.38356164, userPrice: null }), handed.rows[0]);
+check('the first is the first', JSON.stringify(handed.rows[0]) === JSON.stringify({ name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: '13.38356164', userPrice: null }), handed.rows[0]);
 check('the list as handed over had no prices, and none is made up', handed.rows.every((row) => row.userPrice === null));
 check('the comma in a limit is read', handed.rows[3]!.name === 'Capital One Walmart' && handed.rows[3]!.creditLimit === 1524 && handed.rows[3]!.openDate === '2017-12-31');
 check('the last is the last', handed.rows[13]!.creditLimit === 500 && handed.rows[13]!.openDate === '2009-03-15');
@@ -191,12 +192,39 @@ check('the same tradeline twice is two rows, as it was in the sheet', handed.row
 const EXPECTED_AGES = [13.38356164, 11.26849315, 13.38356164, 7.654794521, 13.78630137, 12.46575342, 12.65753425, 14.40821918, 14.40821918, 13.78356164, 13.78630137, 15.1890411, 16.10410959, 16.45753425];
 check('every pasted age is kept exactly as it was pasted', handed.rows.map((row) => row.age).join() === EXPECTED_AGES.join(), handed.rows.map((row) => row.age));
 check('and is shown exactly as it was pasted', handed.rows.map((row) => formatAge(row.age)).join() === '13.38356164,11.26849315,13.38356164,7.654794521,13.78630137,12.46575342,12.65753425,14.40821918,14.40821918,13.78356164,13.78630137,15.1890411,16.10410959,16.45753425');
-check('none of them was worked out from the open date', handed.rows[0]!.age === handed.rows[2]!.age && handed.rows[0]!.age !== 14.5);
+check('none of them was worked out from the open date', handed.rows[0]!.age === handed.rows[2]!.age && handed.rows[0]!.age !== '14.5');
+
+console.log('- the current sheet, pasted whole -');
+const CURRENT = [
+  'Issuer/Type\tCredit Limit\tOpen Date\tAge (Years)\tUser Price',
+  'Capital One/Cabelas\t$500\t10-Apr-12\t13.38\t$700.00',
+  'Capital One/Cabelas\t$500\t22-May-14\t11.268\t$700.00',
+  'Capital One/Cabelas\t$500\t10-Apr-12\t13.38\t$700.00',
+  'Capital One Walmart\t$1,524\t31-Dec-17\t7.65\t$550.00',
+  'Capital One\t$3,000\t15-Nov-11\t13.79\t$700.00',
+  'Capital One\t$2,000\t11-Mar-13\t12.47\t$700.00',
+  'Capital One\t$300\t31-Dec-12\t12.66\t$700.00',
+  'Capital One\t$3,000\t2-Apr-11\t14.41\t$700.00',
+  'Capital One\t$5,000\t2-Apr-11\t14.41\t$750.00',
+  'Capital One\t$5,000\t16-Nov-11\t13.78\t$750.00',
+  'Capital One\t$5,000\t15-Nov-11\t13.79\t$750.00',
+  'Capital One\t$3,000\t21-Jun-10\t15.19\t$850.00',
+  'Capital One\t$1,000\t22-Jul-09\t16.10\t$850.00',
+  'Capital One\t$500\t15-Mar-09\t16.46\t$850.00',
+].join('\n');
+const current = parsePaste(CURRENT, '2026-10-08');
+check('all fourteen rows, header skipped, nothing unread', current.rows.length === 14 && current.problems.length === 0, current.problems);
+check('every age exactly as pasted, zero on the end and all', current.rows.map((row) => formatAge(row.age)).join() === '13.38,11.268,13.38,7.65,13.79,12.47,12.66,14.41,14.41,13.78,13.79,15.19,16.10,16.46', current.rows.map((row) => row.age));
+check('every price as pasted', current.rows.map((row) => formatPrice(row.userPrice)).join('|') === '$700.00|$700.00|$700.00|$550.00|$700.00|$700.00|$700.00|$700.00|$750.00|$750.00|$750.00|$850.00|$850.00|$850.00');
+check('every limit', current.rows.map((row) => row.creditLimit).join() === '500,500,500,1524,3000,2000,300,3000,5000,5000,5000,3000,1000,500');
+check('every open date', current.rows.map((row) => row.openDate).join() === '2012-04-10,2014-05-22,2012-04-10,2017-12-31,2011-11-15,2013-03-11,2012-12-31,2011-04-02,2011-04-02,2011-11-16,2011-11-15,2010-06-21,2009-07-22,2009-03-15');
+check('every name', current.rows.filter((row) => row.name === 'Capital One').length === 10 && current.rows[3]!.name === 'Capital One Walmart');
+check('ages still sort as numbers, not as text', sortTradelines(current.rows.map((row, n) => ({ ...row, id: String(n + 1), issuer: 'capital-one' as const })), 'age', 'desc').map((row) => row.age).slice(0, 3).join() === '16.46,16.10,15.19');
 
 console.log('- copied straight from a spreadsheet -');
 const tabbed = parsePaste('Issuer/Type\tCredit Limit\tOpen Date\tAge (Years)\nCiti Double Cash\t$7,500\t3-Mar-15\t10.5\nCiti Simplicity\t$2,000\t2016-01-20\t9.6\n', TODAY);
 check('two rows, header skipped', tabbed.rows.length === 2 && tabbed.problems.length === 0, tabbed);
-check('read across, age included', tabbed.rows[0]!.name === 'Citi Double Cash' && tabbed.rows[0]!.creditLimit === 7500 && tabbed.rows[0]!.openDate === '2015-03-03' && tabbed.rows[0]!.age === 10.5 && tabbed.rows[1]!.age === 9.6);
+check('read across, age included', tabbed.rows[0]!.name === 'Citi Double Cash' && tabbed.rows[0]!.creditLimit === 7500 && tabbed.rows[0]!.openDate === '2015-03-03' && tabbed.rows[0]!.age === '10.5' && tabbed.rows[1]!.age === '9.6');
 const noAge = parsePaste('PNC Cash Rewards\t$4,000\t5/6/2014\n', TODAY);
 check('three columns, with no age, is fine', noAge.rows.length === 1 && noAge.rows[0]!.openDate === '2014-05-06');
 check('and that row simply has no age: none is made up for it', noAge.rows[0]!.age === null);
@@ -209,7 +237,7 @@ check('blank lines between rows are ignored', parsePaste('\n\nPNC\t$1,000\t1-Jan
 console.log('- pasted with the user price -');
 const priced = parsePaste('Issuer/Type\tCredit Limit\tOpen Date\tAge (Years)\tUser Price\nCiti Double Cash\t$7,500\t3-Mar-15\t10.5\t$450\nCiti Simplicity\t$2,000\t20-Jan-16\t9.6\t\n', TODAY);
 check('five columns are read, header skipped', priced.rows.length === 2 && priced.problems.length === 0, priced);
-check('the price is the fifth', priced.rows[0]!.userPrice === 450 && priced.rows[0]!.age === 10.5 && priced.rows[0]!.creditLimit === 7500);
+check('the price is the fifth', priced.rows[0]!.userPrice === 450 && priced.rows[0]!.age === '10.5' && priced.rows[0]!.creditLimit === 7500);
 check('a row with the price cell empty has none', priced.rows[1]!.userPrice === null);
 const pricedLines = parsePaste('Issuer/Type\nCredit Limit\nOpen Date\nAge (Years)\nUser Price\nCapital One\n$3,000\n15-Nov-11\n13.78630137\n$375\nCapital One Walmart\n$1,524\n31-Dec-17\n7.654794521\n$250\n', TODAY);
 check('one value per line, with the price last', pricedLines.rows.length === 2 && pricedLines.problems.length === 0, pricedLines);
@@ -233,7 +261,7 @@ const many = parsePaste(Array.from({ length: MAX_PASTE_ROWS + 5 }, (_, n) => `Ca
 check('more than fits in one paste is said, not silently cut', many.rows.length === MAX_PASTE_ROWS && many.problems.some((problem) => /at a time/.test(problem.reason)));
 
 console.log('- one tradeline -');
-const good = { name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: 13.78630137, userPrice: 375 as number | null };
+const good = { name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: '13.78630137' as string | null, userPrice: 375 as number | null };
 check('a good one has no problems', Object.keys(checkTradeline(good, TODAY)).length === 0);
 check('no name', checkTradeline({ ...good, name: '  ' }, TODAY).name !== undefined);
 check('a name too long', checkTradeline({ ...good, name: 'x'.repeat(121) }, TODAY).name !== undefined);
@@ -243,12 +271,13 @@ check('no date', checkTradeline({ ...good, openDate: '' }, TODAY).openDate !== u
 check('a date tomorrow', checkTradeline({ ...good, openDate: '2025-08-26' }, TODAY).openDate !== undefined);
 check('a date today is fine', checkTradeline({ ...good, openDate: TODAY }, TODAY).openDate === undefined);
 check('no age is allowed', checkTradeline({ ...good, age: null }, TODAY).age === undefined);
-check('an absurd age is caught', checkTradeline({ ...good, age: 500 }, TODAY).age !== undefined);
+check('an absurd age is caught', checkTradeline({ ...good, age: '500' }, TODAY).age !== undefined);
+check('an age that is not a number is caught', checkTradeline({ ...good, age: 'old' }, TODAY).age !== undefined);
 check('no price is allowed', checkTradeline({ ...good, userPrice: null }, TODAY).userPrice === undefined);
 check('a negative price is caught', checkTradeline({ ...good, userPrice: -1 }, TODAY).userPrice !== undefined);
-for (const text of Object.values(checkTradeline({ name: '', creditLimit: 0, openDate: '', age: 500, userPrice: -1 }, TODAY))) said.push(text);
+for (const text of Object.values(checkTradeline({ name: '', creditLimit: 0, openDate: '', age: '500', userPrice: -1 }, TODAY))) said.push(text);
 const typed = readTradelineInput({ name: ' Capital One ', creditLimit: '$3,000', openDate: '15-Nov-11', age: '13.78630137' }, TODAY);
-check('a form\'s text is read the way a paste is', typed.ok && typed.value.name === 'Capital One' && typed.value.creditLimit === 3000 && typed.value.openDate === '2011-11-15' && typed.value.age === 13.78630137);
+check('a form\'s text is read the way a paste is', typed.ok && typed.value.name === 'Capital One' && typed.value.creditLimit === 3000 && typed.value.openDate === '2011-11-15' && typed.value.age === '13.78630137');
 const blankAge = readTradelineInput({ name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: '' }, TODAY);
 check('a blank age is no age, not zero', blankAge.ok && blankAge.value.age === null);
 const wordAge = readTradelineInput({ name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: 'old' }, TODAY);
@@ -267,10 +296,10 @@ check('something that is not a tradeline at all is refused', !readTradelineInput
 
 console.log('- sorting -');
 const rows: Tradeline[] = [
-  { id: '1', issuer: 'capital-one', name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: 13.78, userPrice: 400 },
+  { id: '1', issuer: 'capital-one', name: 'Capital One', creditLimit: 3000, openDate: '2011-11-15', age: '13.78', userPrice: 400 },
   { id: '2', issuer: 'capital-one', name: 'Capital One Walmart', creditLimit: 1524, openDate: '2017-12-31', age: null, userPrice: null },
-  { id: '3', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: 20, userPrice: 150 },
-  { id: '4', issuer: 'capital-one', name: 'capital one', creditLimit: 5000, openDate: '2011-04-02', age: 14.4, userPrice: 900 },
+  { id: '3', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: '20', userPrice: 150 },
+  { id: '4', issuer: 'capital-one', name: 'capital one', creditLimit: 5000, openDate: '2011-04-02', age: '14.4', userPrice: 900 },
 ];
 const ids = (key: Parameters<typeof sortTradelines>[1], dir: 'asc' | 'desc') => sortTradelines(rows, key, dir).map((row) => row.id).join();
 check('as entered, by default', ids('entered', 'asc') === '1,2,3,4');

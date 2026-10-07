@@ -35,8 +35,8 @@ function render(node: ReactNode): string {
 
 const TODAY = '2025-08-25';
 const rows: Tradeline[] = [
-  { id: '1', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: 13.38356164, userPrice: 450 },
-  { id: '2', issuer: 'capital-one', name: 'Capital One Walmart', creditLimit: 1524, openDate: '2017-12-31', age: 7.654794521, userPrice: 1250.5 },
+  { id: '1', issuer: 'capital-one', name: 'Capital One/Cabelas', creditLimit: 500, openDate: '2012-04-10', age: '13.38356164', userPrice: 450 },
+  { id: '2', issuer: 'capital-one', name: 'Capital One Walmart', creditLimit: 1524, openDate: '2017-12-31', age: '7.654794521', userPrice: 1250.5 },
   { id: '3', issuer: 'capital-one', name: 'Capital One <b>', creditLimit: 5000, openDate: '2011-04-02', age: null, userPrice: null },
 ];
 
@@ -72,7 +72,7 @@ check('but each logo still says who it is, for anybody who cannot see it', TRADE
 console.log('- switching issuer -');
 const all: Tradeline[] = [
   ...rows,
-  { id: '9', issuer: 'citi', name: 'Citi Double Cash', creditLimit: 7500, openDate: '2015-03-03', age: 10.5, userPrice: 300 },
+  { id: '9', issuer: 'citi', name: 'Citi Double Cash', creditLimit: 7500, openDate: '2015-03-03', age: '10.5', userPrice: 300 },
 ];
 const browser = render(<TradelinesBrowser all={all} initialIssuer="citi" today={TODAY} />);
 check('it opens on the issuer in the address', browser.includes('Citi Double Cash') && !browser.includes('Capital One/Cabelas'));
@@ -94,7 +94,7 @@ check('its age is the pasted figure, every digit of it', table.includes('>13.383
 check('and is not worked out from the open date', !render(<TradelinesTable issuer="capital-one" rows={rows} today="2026-10-07" />).includes('14.5'));
 check('a tradeline with no age shows none', !table.includes('NaN') && !table.includes('>0<'));
 check('an age can be typed when adding one', table.includes('name="age"'));
-check('the user price is shown as money', table.includes('>$450<') && table.includes('>$1,250.50<'));
+check('the user price is shown as money', table.includes('>$450.00<') && table.includes('>$1,250.50<'));
 check('and can be typed when adding one', table.includes('name="userPrice"'));
 check('the columns run in the sheet\'s order, price last', table.indexOf('Age (Years)') < table.indexOf('User Price'));
 check('a name is text, never markup', !table.includes('<b>') && table.includes('&lt;b&gt;'));

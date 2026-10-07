@@ -62,7 +62,13 @@ function isRowId(id: string): boolean {
   return /^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id));
 }
 
-const COLUMNS = 'id, issuer, name, credit_limit, open_date, age_years, user_price';
+/*
+ * The age is read as text. It is a numeric column, which keeps the digits it
+ * was given (16.10 stays 16.10), but as a JSON number it would reach this
+ * code as 16.1. Cast to text on the way out, and sent as text on the way in,
+ * it arrives exactly as it was pasted.
+ */
+const COLUMNS = 'id, issuer, name, credit_limit, open_date, age_years::text, user_price';
 
 function toTradeline(row: Record<string, unknown>): Tradeline | null {
   if (!isIssuerKey(row.issuer)) return null;
@@ -73,7 +79,7 @@ function toTradeline(row: Record<string, unknown>): Tradeline | null {
     creditLimit: Number(row.credit_limit ?? 0),
     openDate: String(row.open_date ?? '').slice(0, 10),
     // As stored, which is as given. Null stays null: no age is not zero.
-    age: row.age_years === null || row.age_years === undefined ? null : Number(row.age_years),
+    age: row.age_years === null || row.age_years === undefined ? null : String(row.age_years),
     userPrice: row.user_price === null || row.user_price === undefined ? null : Number(row.user_price),
   };
 }
