@@ -12,6 +12,7 @@ import {
   formatLimit,
   formatOpenDate,
   issuerLabel,
+  issuerLogo,
   MAX_NAME,
   parseAge,
   parseLimit,
@@ -29,26 +30,77 @@ import {
 /**
  * Which issuer's table is showing, and how to reach the others.
  *
+ * A card each, with the issuer's logo, because a row of six bank names is
+ * read word by word and six logos are recognised at a glance. The name is
+ * still written under each one: a logo alone says nothing to a screen reader,
+ * or to anybody when the image does not load.
+ *
  * Links rather than buttons, and the choice in the address: a table an admin
  * is working through should survive a reload, and "the Citi table" should be
  * something that can be sent to somebody. The first issuer is the bare
  * address, since it is where the page opens.
+ *
+ * The logo files are squares with the mark in the middle and white round it,
+ * and how much of the square the mark fills differs from one to the next: a
+ * wide wordmark is a thin strip, a stacked one fills most of the height. So
+ * each is drawn at its own size (LOGO_SIZE), chosen so its mark fills the
+ * frame, and the frame cuts the empty margin away. Every card stays white,
+ * selected or not, since the logos are drawn for a white ground; the one
+ * showing is told apart by its border and the bar under it.
  */
+
+/**
+ * How large, in pixels, each logo's square is drawn inside a frame 72 high.
+ * Worked out from where the mark sits in each file, so that the mark itself
+ * comes out about 140 wide or 68 tall, whichever it reaches first. A new
+ * logo file needs its own number here; 120 shows any square whole-ish.
+ */
+const LOGO_SIZE: Record<IssuerKey, number> = {
+  'capital-one': 180, // wide wordmark: 78% of the width, 28% of the height
+  citi: 136, // 76% wide, 46% tall with its arc
+  discover: 180, // 77% wide, a thin strip
+  'fidelity-elan': 180, // 77% wide
+  pnc: 90, // stacked: 59% wide, 76% tall
+  'us-bank': 175, // 80% wide
+};
 export function IssuerTabs({ current, counts }: { current: IssuerKey; counts: Record<IssuerKey, number> }) {
   return (
-    <nav aria-label="Issuers" className="mt-5 flex flex-wrap gap-2">
-      {TRADELINE_ISSUERS.map((issuer, index) => (
-        <Link
-          key={issuer.key}
-          href={index === 0 ? '/tradelines' : `/tradelines?issuer=${issuer.key}`}
-          className="pill-filter"
-          data-active={issuer.key === current ? 'true' : 'false'}
-          aria-current={issuer.key === current ? 'page' : undefined}
-        >
-          {issuer.label}
-          <span className="tnum text-[11px] opacity-70">{counts[issuer.key] ?? 0}</span>
-        </Link>
-      ))}
+    <nav aria-label="Issuers" className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      {TRADELINE_ISSUERS.map((issuer, index) => {
+        const active = issuer.key === current;
+        return (
+          <Link
+            key={issuer.key}
+            href={index === 0 ? '/tradelines' : `/tradelines?issuer=${issuer.key}`}
+            data-active={active ? 'true' : 'false'}
+            aria-current={active ? 'page' : undefined}
+            className={`group relative flex flex-col items-center overflow-hidden rounded-[10px] border bg-white px-3 pb-3 pt-2 text-center transition-colors ${
+              active ? 'border-navy shadow-[0_0_0_1px_var(--color-navy)]' : 'border-edge hover:border-edge-strong'
+            }`}
+          >
+            <span className="relative block h-[72px] w-full overflow-hidden">
+              {/* A plain img: a small static file from this app's own public
+                  folder, with nothing for next/image to optimise. */}
+              <img
+                src={issuerLogo(issuer.key)}
+                alt=""
+                width={LOGO_SIZE[issuer.key]}
+                height={LOGO_SIZE[issuer.key]}
+                loading="lazy"
+                style={{ width: LOGO_SIZE[issuer.key], height: LOGO_SIZE[issuer.key] }}
+                className="absolute left-1/2 top-1/2 max-w-none -translate-x-1/2 -translate-y-1/2"
+              />
+            </span>
+            <span className={`mt-1 block text-[12px] leading-tight ${active ? 'font-semibold text-ink' : 'font-medium text-ink-soft'}`}>
+              {issuer.label}
+            </span>
+            <span className="tnum mt-1 block text-[11px] text-ink-dim">
+              <span>{counts[issuer.key] ?? 0}</span> {(counts[issuer.key] ?? 0) === 1 ? 'tradeline' : 'tradelines'}
+            </span>
+            <span aria-hidden className={`absolute inset-x-0 bottom-0 h-[3px] ${active ? 'bg-navy' : 'bg-transparent'}`} />
+          </Link>
+        );
+      })}
     </nav>
   );
 }

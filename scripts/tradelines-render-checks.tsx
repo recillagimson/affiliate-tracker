@@ -11,7 +11,9 @@ import {
 import { PathnameContext } from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
 import { visibleItems, Nav } from '../src/components/Nav';
 import { IssuerTabs, PastePreview, TradelinesTable } from '../src/components/TradelinesTable';
-import { parsePaste, type Tradeline } from '../src/lib/tradelines';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { parsePaste, TRADELINE_ISSUERS, type Tradeline } from '../src/lib/tradelines';
 
 let pass = 0;
 let fail = 0;
@@ -59,6 +61,13 @@ check('each links to its own table', tabs.includes('href="/tradelines?issuer=cit
 check('the first is the bare address', tabs.includes('href="/tradelines"'));
 check('the one showing is marked', /href="\/tradelines"[^>]*data-active="true"|data-active="true"[^>]*href="\/tradelines"/.test(tabs));
 check('each says how many it holds', tabs.includes('>14<') && tabs.includes('>3<'));
+for (const issuer of TRADELINE_ISSUERS) {
+  check(`${issuer.label} shows its logo`, new RegExp(`<img[^>]*src="/issuers/${issuer.key}\\.webp"`).test(tabs), issuer.key);
+  check(`${issuer.label}'s logo file is there to be served`, existsSync(join(__dirname, '..', 'public', 'issuers', `${issuer.key}.webp`)));
+}
+check('six logos, one each', (tabs.match(/<img/g) ?? []).length === 6);
+check('the name is still written under the logo, for anybody who cannot see it', (tabs.match(/alt=""/g) ?? []).length === 6 && tabs.includes('Fidelity/Elan Tradeline'));
+check('the one showing is told apart without relying on the logo', tabs.includes('aria-current="page"'));
 
 console.log('- the table -');
 const table = render(<TradelinesTable issuer="capital-one" rows={rows} today={TODAY} />);

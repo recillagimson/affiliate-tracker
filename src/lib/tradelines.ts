@@ -55,6 +55,11 @@ export function issuerFrom(value: unknown): IssuerKey {
   return isIssuerKey(text) ? text : TRADELINE_ISSUERS[0].key;
 }
 
+/** Where an issuer's logo is served from: public/issuers/<key>.webp. */
+export function issuerLogo(key: IssuerKey): string {
+  return `/issuers/${key}.webp`;
+}
+
 export function issuerLabel(key: IssuerKey): string {
   return TRADELINE_ISSUERS.find((issuer) => issuer.key === key)?.label ?? key;
 }
