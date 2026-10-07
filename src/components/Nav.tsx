@@ -21,6 +21,9 @@ const ITEMS: Item[] = [
   // and an admin sees all of them. The page and the route decide which, from
   // the session.
   { href: '/support', label: 'Support' },
+  // The tradelines on offer, issuer by issuer. Admin-only for now: it is
+  // being loaded, and is not yet something an affiliate is shown.
+  { href: '/tradelines', label: 'Tradelines', adminOnly: true },
   { href: '/reports', label: 'Reports', adminOnly: true },
   { href: '/users', label: 'People', adminOnly: true },
   // Who is owed what, and by when. Admin-only: it is everybody's money on one
@@ -53,6 +56,7 @@ function isActive(href: string, pathname: string): boolean {
   if (href === '/links') return pathname === '/links';
   if (href === '/cpa') return pathname.startsWith('/cpa');
   if (href === '/support') return pathname.startsWith('/support');
+  if (href === '/tradelines') return pathname.startsWith('/tradelines');
   if (href === '/reports') return pathname.startsWith('/reports');
   if (href === '/users') return pathname.startsWith('/users');
   if (href === '/payouts') return pathname.startsWith('/payouts');

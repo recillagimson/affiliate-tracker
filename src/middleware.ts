@@ -190,6 +190,12 @@ export const config = {
     '/api/payouts/:path*',
     '/api/payslips',
     '/api/payslips/:path*',
+    // The tradelines table. Admin-only, and the page and route check that
+    // themselves; listed here so a signed-out request never reaches either.
+    '/tradelines',
+    '/tradelines/:path*',
+    '/api/tradelines',
+    '/api/tradelines/:path*',
     // Support tickets. A conversation between one affiliate and the admins,
     // with screenshots, so a signed-out request must not reach the pages, the
     // route behind them or the image route, even to be told no.

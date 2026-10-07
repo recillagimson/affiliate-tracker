@@ -1,0 +1,590 @@
+'use client';
+
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
+import { Modal } from '@/components/Modal';
+import { BusyLabel } from '@/components/Spinner';
+import { TableScroller } from '@/components/TableScroller';
+import {
+  ageYears,
+  checkTradeline,
+  formatAge,
+  formatLimit,
+  formatOpenDate,
+  issuerLabel,
+  MAX_NAME,
+  parseLimit,
+  parsePaste,
+  sortTradelines,
+  TRADELINE_ISSUERS,
+  type IssuerKey,
+  type PasteResult,
+  type Tradeline,
+  type TradelineSort,
+} from '@/lib/tradelines';
+
+/* ------------------------------------------------------------- the issuers --- */
+
+/**
+ * Which issuer's table is showing, and how to reach the others.
+ *
+ * Links rather than buttons, and the choice in the address: a table an admin
+ * is working through should survive a reload, and "the Citi table" should be
+ * something that can be sent to somebody. The first issuer is the bare
+ * address, since it is where the page opens.
+ */
+export function IssuerTabs({ current, counts }: { current: IssuerKey; counts: Record<IssuerKey, number> }) {
+  return (
+    <nav aria-label="Issuers" className="mt-5 flex flex-wrap gap-2">
+      {TRADELINE_ISSUERS.map((issuer, index) => (
+        <Link
+          key={issuer.key}
+          href={index === 0 ? '/tradelines' : `/tradelines?issuer=${issuer.key}`}
+          className="pill-filter"
+          data-active={issuer.key === current ? 'true' : 'false'}
+          aria-current={issuer.key === current ? 'page' : undefined}
+        >
+          {issuer.label}
+          <span className="tnum text-[11px] opacity-70">{counts[issuer.key] ?? 0}</span>
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+/* ---------------------------------------------------------------- requests --- */
+
+async function post(body: Record<string, unknown>): Promise<{ ok: true } | { ok: false; error: string; fields: Record<string, string> }> {
+  let response: Response;
+  try {
+    response = await fetch('/api/tradelines', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return { ok: false, error: 'Could not reach the server.', fields: {} };
+  }
+  const data = (await response.json().catch(() => ({}))) as { error?: string; hint?: string; fields?: Record<string, string> };
+  if (response.ok) return { ok: true };
+  const error = data.error ? (data.hint ? `${data.error} ${data.hint}` : data.error) : `That did not save (${response.status}).`;
+  return { ok: false, error, fields: data.fields ?? {} };
+}
+
+function Alert({ children }: { children: string }) {
+  return (
+    <p role="alert" className="warn-note">
+      <span aria-hidden className="warn-note-mark">
+        ⚠
+      </span>
+      <span>{children}</span>
+    </p>
+  );
+}
+
+/* --------------------------------------------------------------- the table --- */
+
+const COLUMNS: { key: TradelineSort; label: string; right: boolean }[] = [
+  { key: 'name', label: 'Issuer/Type', right: false },
+  { key: 'creditLimit', label: 'Credit Limit', right: true },
+  { key: 'openDate', label: 'Open Date', right: true },
+  { key: 'age', label: 'Age (Years)', right: true },
+];
+
+type Editing = { mode: 'add' } | { mode: 'edit'; row: Tradeline } | null;
+
+/**
+ * One issuer's tradelines, and the ways an admin keeps them up to date.
+ *
+ * Four columns, the sheet's own. The fourth, age, is not stored: it is today
+ * minus the open date, worked out as the table is drawn, so it is right every
+ * morning without anybody touching it. `today` comes from the server with the
+ * rows, so the first paint and the browser agree on what day it is.
+ *
+ * Rows start in the order they were entered, which is the order of the sheet
+ * they came from. A heading sorts by its column, and pressing it again turns
+ * the sort round.
+ */
+export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; rows: Tradeline[]; today: string }) {
+  const router = useRouter();
+  const [sort, setSort] = useState<{ key: TradelineSort; direction: 'asc' | 'desc' }>({ key: 'entered', direction: 'asc' });
+  const [editing, setEditing] = useState<Editing>(null);
+  const [pasting, setPasting] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const shown = useMemo(() => sortTradelines(rows, sort.key, sort.direction), [rows, sort]);
+  const label = issuerLabel(issuer);
+
+  function sortBy(key: TradelineSort) {
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : // Numbers open on the big end, which is the end people look for:
+          // the oldest tradeline, the highest limit. Names open at A.
+          { key, direction: key === 'name' || key === 'openDate' ? 'asc' : 'desc' },
+    );
+  }
+
+  async function remove(row: Tradeline) {
+    if (!confirm(`Delete ${row.name}, ${formatLimit(row.creditLimit)}, opened ${formatOpenDate(row.openDate)}?`)) return;
+    setBusyId(row.id);
+    setError(null);
+    const result = await post({ action: 'delete', id: row.id });
+    setBusyId(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <section className="panel mt-5 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3 border-b border-edge px-5 py-3.5">
+        <div>
+          <h2 className="text-[15px] font-semibold">{label}</h2>
+          <p className="mt-0.5 text-[12px] text-ink-soft">
+            {rows.length === 1 ? '1 tradeline' : `${rows.length} tradelines`}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2.5">
+          <button type="button" className="btn-outline" aria-haspopup="dialog" onClick={() => setPasting(true)}>
+            Paste rows
+          </button>
+          <button type="button" className="btn-gold" aria-haspopup="dialog" onClick={() => setEditing({ mode: 'add' })}>
+            + Add tradeline
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="border-b border-edge px-5 py-3.5">
+          <Alert>{error}</Alert>
+        </div>
+      ) : null}
+
+      {rows.length === 0 ? (
+        <p className="px-5 py-14 text-center text-[13px] text-ink-soft">
+          No tradelines for {label} yet. Paste them in from a spreadsheet, or add one at a time.
+        </p>
+      ) : (
+        <TableScroller label={`${label} tradelines`}>
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr>
+                {COLUMNS.map((column) => {
+                  const active = sort.key === column.key;
+                  return (
+                    <th
+                      key={column.key}
+                      scope="col"
+                      aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                      className={`border-b border-edge px-5 py-0 ${column.right ? 'text-right' : 'text-left'}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => sortBy(column.key)}
+                        className={`label-cap inline-flex items-center gap-1.5 py-2.5 text-[10px] ${active ? 'text-ink' : ''}`}
+                      >
+                        {column.label}
+                        {/* Always there, dimmed when idle, so the row does not shift when a sort starts. */}
+                        <span aria-hidden className={active ? '' : 'opacity-30'}>
+                          {active && sort.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
+                <th scope="col" className="border-b border-edge px-5 py-2.5">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((row) => (
+                <tr key={row.id} className="border-b border-edge last:border-b-0">
+                  <td className="px-5 py-3 text-[13px] font-medium text-ink">{row.name}</td>
+                  <td className="tnum px-5 py-3 text-right text-[13px] text-ink">{formatLimit(row.creditLimit)}</td>
+                  <td className="tnum whitespace-nowrap px-5 py-3 text-right text-[13px] text-ink-soft">
+                    {formatOpenDate(row.openDate)}
+                  </td>
+                  <td className="tnum px-5 py-3 text-right text-[13px] text-ink">{formatAge(ageYears(row.openDate, today))}</td>
+                  <td className="whitespace-nowrap px-5 py-2 text-right">
+                    <span className="inline-flex justify-end gap-1.5">
+                      <button
+                        type="button"
+                        className="btn-quiet btn-sm"
+                        disabled={busyId === row.id}
+                        onClick={() => setEditing({ mode: 'edit', row })}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger btn-sm"
+                        disabled={busyId === row.id}
+                        aria-busy={busyId === row.id}
+                        onClick={() => remove(row)}
+                      >
+                        Delete
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroller>
+      )}
+
+      {/* Keyed by what is being edited, so each opening starts from that row's own values. */}
+      <TradelineForm
+        key={editing ? (editing.mode === 'edit' ? `edit-${editing.row.id}` : 'add') : 'closed'}
+        issuer={issuer}
+        editing={editing}
+        today={today}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          router.refresh();
+        }}
+      />
+      <PasteDialog
+        open={pasting}
+        issuer={issuer}
+        existing={rows.length}
+        today={today}
+        onClose={() => setPasting(false)}
+        onSaved={() => {
+          setPasting(false);
+          router.refresh();
+        }}
+      />
+    </section>
+  );
+}
+
+/* ----------------------------------------------------------- one tradeline --- */
+
+/**
+ * Adding one tradeline, or changing one.
+ *
+ * The limit is typed the way it is written, "$3,000" or "3000", and read the
+ * way a paste is. The date is a date field, so there is no format to get
+ * wrong, and it cannot be set past today.
+ */
+function TradelineForm({
+  issuer,
+  editing,
+  today,
+  onClose,
+  onSaved,
+}: {
+  issuer: IssuerKey;
+  editing: Editing;
+  today: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const row = editing?.mode === 'edit' ? editing.row : null;
+  const [name, setName] = useState(row?.name ?? '');
+  const [limit, setLimit] = useState(row ? formatLimit(row.creditLimit) : '');
+  const [openDate, setOpenDate] = useState(row?.openDate ?? '');
+  const [problems, setProblems] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    const input = { name: name.trim(), creditLimit: parseLimit(limit) ?? 0, openDate };
+    const found = checkTradeline(input, today);
+    if (Object.keys(found).length > 0) {
+      setProblems(found);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setProblems({});
+    const result = await post(row ? { action: 'update', id: row.id, ...input } : { action: 'add', issuer, ...input });
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      setProblems(result.fields);
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <Modal open={editing !== null} title={row ? 'Edit tradeline' : `Add a tradeline to ${issuerLabel(issuer)}`} onClose={onClose}>
+      <form onSubmit={save} className="mt-5 flex flex-col gap-6">
+        {error ? <Alert>{error}</Alert> : null}
+
+        <label className="block">
+          <span className="field-label">Issuer/Type</span>
+          <input
+            name="name"
+            className="field mt-1.5"
+            value={name}
+            maxLength={MAX_NAME}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Capital One Walmart"
+            autoComplete="off"
+            disabled={busy}
+            aria-invalid={problems.name ? true : undefined}
+          />
+          {problems.name ? <span className="field-error">{problems.name}</span> : null}
+        </label>
+
+        <div className="grid gap-x-5 gap-y-6 sm:grid-cols-2">
+          <label className="block">
+            <span className="field-label">Credit limit</span>
+            <input
+              name="creditLimit"
+              className="field mt-1.5"
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+              placeholder="$3,000"
+              inputMode="decimal"
+              autoComplete="off"
+              disabled={busy}
+              aria-invalid={problems.creditLimit ? true : undefined}
+            />
+            {problems.creditLimit ? <span className="field-error">{problems.creditLimit}</span> : null}
+          </label>
+
+          <label className="block">
+            <span className="field-label">Open date</span>
+            <input
+              name="openDate"
+              type="date"
+              className="field mt-1.5"
+              value={openDate}
+              max={today}
+              onChange={(e) => setOpenDate(e.target.value)}
+              disabled={busy}
+              aria-invalid={problems.openDate ? true : undefined}
+            />
+            {problems.openDate ? (
+              <span className="field-error">{problems.openDate}</span>
+            ) : (
+              <span className="field-note">Its age is worked out from this.</span>
+            )}
+          </label>
+        </div>
+
+        <div className="flex flex-wrap justify-end gap-2.5 border-t border-edge pt-5">
+          <button type="button" className="btn-outline" disabled={busy} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-gold" disabled={busy} aria-busy={busy}>
+            <BusyLabel busy={busy} idle={row ? 'Save changes' : 'Add tradeline'} busyLabel="Saving…" />
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------- paste --- */
+
+/** How many of a paste's rows are drawn before the rest become a line. */
+const PREVIEW_ROWS = 8;
+
+/**
+ * What a paste was read as, before anything is saved: how many tradelines,
+ * the first few of them, and every row that could not be read, with its line.
+ *
+ * No state, so every shape it takes is rendered directly by
+ * scripts/tradelines-render-checks.tsx.
+ */
+export function PastePreview({ result, today }: { result: PasteResult; today: string }) {
+  const { rows, problems } = result;
+  if (rows.length === 0 && problems.length === 0) return null;
+  const more = rows.length - PREVIEW_ROWS;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {rows.length > 0 ? (
+        <div>
+          <p className="text-[13px] font-medium text-ink">
+            {rows.length === 1 ? '1 tradeline read' : `${rows.length} tradelines read`}
+          </p>
+          <div className="mt-2 overflow-x-auto rounded-[6px] border border-edge">
+            <table className="w-full border-collapse text-left text-[12px]">
+              <tbody>
+                {rows.slice(0, PREVIEW_ROWS).map((row, index) => (
+                  <tr key={index} className="border-b border-edge last:border-b-0">
+                    <td className="px-3 py-1.5 text-ink">{row.name}</td>
+                    <td className="tnum px-3 py-1.5 text-right text-ink">{formatLimit(row.creditLimit)}</td>
+                    <td className="tnum whitespace-nowrap px-3 py-1.5 text-right text-ink-soft">{formatOpenDate(row.openDate)}</td>
+                    <td className="tnum px-3 py-1.5 text-right text-ink-soft">{formatAge(ageYears(row.openDate, today))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {more > 0 ? <p className="mt-1.5 text-[12px] text-ink-soft">and {more} more.</p> : null}
+        </div>
+      ) : null}
+
+      {problems.length > 0 ? (
+        <div className="rounded-[6px] border border-alarm-edge bg-alarm-wash p-3">
+          <p className="text-[13px] font-medium text-alarm">
+            {problems.length === 1 ? '1 row could not be read' : `${problems.length} rows could not be read`}, and will be left
+            out.
+          </p>
+          <ul className="mt-2 flex flex-col gap-1.5 text-[12px] text-ink">
+            {problems.map((problem, index) => (
+              <li key={index}>
+                {problem.line > 0 ? <strong className="font-semibold">Line {problem.line}: </strong> : null}
+                {problem.reason}
+                {problem.text ? <span className="block text-ink-soft">{problem.text}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Loading tradelines from a spreadsheet.
+ *
+ * Paste, and what it was read as appears underneath at once: nothing is saved
+ * until the admin has seen it and pressed the button. Rows that could not be
+ * read are listed and left out, and the rest can still be saved.
+ *
+ * Adding is the default. Replacing throws away what the table holds, so it
+ * has to be chosen, says how many rows it will remove, and asks once more.
+ */
+function PasteDialog({
+  open,
+  issuer,
+  existing,
+  today,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  issuer: IssuerKey;
+  existing: number;
+  today: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState('');
+  const [mode, setMode] = useState<'add' | 'replace'>('add');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const result = useMemo(() => parsePaste(text, today), [text, today]);
+  const count = result.rows.length;
+  const label = issuerLabel(issuer);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy || count === 0) return;
+    if (
+      mode === 'replace' &&
+      existing > 0 &&
+      !confirm(`Replace all ${existing} ${label} tradelines with these ${count}? The current ones are deleted.`)
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const saved = await post({ action: 'import', issuer, mode, rows: result.rows });
+    setBusy(false);
+    if (!saved.ok) {
+      setError(saved.error);
+      return;
+    }
+    setText('');
+    setMode('add');
+    onSaved();
+  }
+
+  return (
+    <Modal open={open} title={`Paste tradelines into ${label}`} onClose={onClose}>
+      <form onSubmit={save} className="mt-5 flex flex-col gap-6">
+        {error ? <Alert>{error}</Alert> : null}
+
+        <label className="block">
+          <span className="field-label">Rows from your spreadsheet</span>
+          <textarea
+            name="rows"
+            className="field mt-1.5 min-h-[150px] py-2 font-mono text-[12px] leading-relaxed"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={'Capital One Walmart\t$1,524\t31-Dec-17'}
+            spellCheck={false}
+            disabled={busy}
+          />
+          <span className="field-note">
+            Copy the Issuer/Type, Credit Limit and Open Date columns and paste them here. A header row and an Age column are
+            fine; the age is worked out from the open date.
+          </span>
+        </label>
+
+        <PastePreview result={result} today={today} />
+
+        <fieldset className="block">
+          <legend className="field-label">What to do with them</legend>
+          <div className="mt-2.5 flex flex-col gap-2.5">
+            {(
+              [
+                ['add', 'Add to the table', 'The tradelines already there are kept, and these go after them.'],
+                [
+                  'replace',
+                  'Replace the table',
+                  existing > 0
+                    ? `The ${existing === 1 ? '1 tradeline' : `${existing} tradelines`} there now ${existing === 1 ? 'is' : 'are'} deleted, and these take their place.`
+                    : 'The table is empty, so this is the same as adding.',
+                ],
+              ] as const
+            ).map(([value, title, meaning]) => (
+              <label key={value} className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="radio"
+                  name="mode"
+                  value={value}
+                  checked={mode === value}
+                  disabled={busy}
+                  onChange={() => setMode(value)}
+                  className="mt-0.5 h-4 w-4 flex-none accent-navy"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[14px] font-medium text-ink">{title}</span>
+                  <span className="block text-[12px] leading-relaxed text-ink-soft">{meaning}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="flex flex-wrap justify-end gap-2.5 border-t border-edge pt-5">
+          <button type="button" className="btn-outline" disabled={busy} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className={mode === 'replace' ? 'btn-danger' : 'btn-gold'} disabled={busy || count === 0} aria-busy={busy}>
+            <BusyLabel
+              busy={busy}
+              idle={
+                count === 0
+                  ? 'Nothing to save yet'
+                  : mode === 'replace'
+                    ? `Replace with ${count === 1 ? '1 tradeline' : `${count} tradelines`}`
+                    : `Add ${count === 1 ? '1 tradeline' : `${count} tradelines`}`
+              }
+              busyLabel="Saving…"
+            />
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

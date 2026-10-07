@@ -1,0 +1,77 @@
+import type { Metadata } from 'next';
+import { ErrorPanel } from '@/components/ErrorPanel';
+import { IssuerTabs, TradelinesTable } from '@/components/TradelinesTable';
+import { issuerFrom, type Tradeline } from '@/lib/tradelines';
+import { countByIssuer, listTradelines, tradelinesEnabled } from '@/lib/tradelines-store';
+import { requireAdmin } from '@/lib/viewer';
+
+export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = { title: 'Tradelines Table' };
+
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+/**
+ * The tradelines table: what tradelines there are, issuer by issuer.
+ *
+ * Six tables, one per issuer, and the address says which is showing so it
+ * survives a reload and can be linked to. Each row is a tradeline's name, its
+ * credit limit and the day it was opened; its age is worked out from that day
+ * as the page is drawn.
+ *
+ * Admins only, for now. It is being loaded, and affiliates on the Tradelines
+ * service are to be shown it later. requireAdmin sends anybody else home, and
+ * the route behind the page's buttons refuses them separately.
+ */
+export default async function TradelinesPage({ searchParams }: PageProps) {
+  await requireAdmin();
+
+  if (!tradelinesEnabled()) {
+    return (
+      <ErrorPanel
+        title="The tradelines table needs a database"
+        message="Tradelines are kept in Supabase. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, then reload this page."
+        hint=""
+      />
+    );
+  }
+
+  const query = await searchParams;
+  const raw = query.issuer;
+  const issuer = issuerFrom(Array.isArray(raw) ? raw[0] : raw);
+
+  let all: Tradeline[];
+  try {
+    all = await listTradelines();
+  } catch (caught) {
+    return (
+      <ErrorPanel
+        title="Could not read the tradelines"
+        message={caught instanceof Error ? caught.message : 'Try again in a moment.'}
+        hint=""
+      />
+    );
+  }
+
+  // The day ages are worked out against, decided once here and handed to the
+  // table, so the server's first paint and the browser agree on it.
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="w-full">
+      <div className="rise">
+        <h1 className="font-display text-[26px] leading-[1.05]">Tradelines Table</h1>
+        <p className="mt-3 max-w-[680px] text-[13px] leading-relaxed text-ink-soft">
+          The tradelines on offer, by issuer. Choose an issuer to see its table. Each tradeline&rsquo;s age is worked out
+          from its open date, so it is always current.
+        </p>
+      </div>
+
+      <IssuerTabs current={issuer} counts={countByIssuer(all)} />
+      {/* Remounted per issuer, so a sort or an open dialog does not carry from one table to the next. */}
+      <TradelinesTable key={issuer} issuer={issuer} rows={all.filter((row) => row.issuer === issuer)} today={today} />
+    </div>
+  );
+}
