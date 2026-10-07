@@ -8,7 +8,7 @@ import {
   AppRouterContext,
   type AppRouterInstance,
 } from 'next/dist/shared/lib/app-router-context.shared-runtime';
-import { PersonDialog } from '../src/components/PersonDialog';
+import { IssuedPassword, PersonDialog } from '../src/components/PersonDialog';
 import type { AccountRow } from '../src/components/UsersPanel';
 
 let pass = 0;
@@ -66,6 +66,17 @@ check('laid out in the same order as adding somebody', order.every((at, i) => at
 check('name and email are the one pair', html.includes('sm:grid-cols-2'));
 check('nothing to save until something changes', /<button[^>]*disabled[^>]*>(<[^>]+>)*Save changes/.test(html) || /disabled=""[^>]*>[^<]*Save changes/.test(html), html.slice(html.indexOf('Save changes') - 200, html.indexOf('Save changes')));
 check('the paperwork is one click away', html.includes('href="/users/u1"') && html.includes('Open full record'));
+
+console.log('- their password -');
+check('a password can be reset from here', /<button[^>]*>(<[^>]+>)*Reset password/.test(html));
+check('it says what resetting does before it is pressed', html.includes('signed out'));
+check('it sits above the buttons that save and close', html.indexOf('Reset password') < html.indexOf('Open full record'));
+check('no password is on show until one is issued', !html.includes('data-issued-password'));
+const issued = render(<IssuedPassword username="maria" password="Xk3!vTq9-mNp2#Lw" />);
+check('a new password is shown in full', issued.includes('Xk3!vTq9-mNp2#Lw'));
+check('for the person it belongs to', issued.includes('maria'));
+check('with a way to copy it', /<button[^>]*>(<[^>]+>)*Copy/.test(issued));
+check('and a warning that it is shown once', issued.includes('once'));
 
 console.log('- an admin -');
 const admin = render(<PersonDialog row={{ ...maria, id: 'a2', role: 'admin', usr: '', services: undefined }} viewerId="a1" onClose={() => {}} />);

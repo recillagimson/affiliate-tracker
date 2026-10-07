@@ -25,6 +25,42 @@ function day(iso: string | null): string {
 }
 
 /**
+ * A password that has just been issued, shown the one time it can be.
+ *
+ * Nothing stores it. Once this dialog is closed the only way to another is to
+ * reset it again, so it says so, and offers to copy it rather than leaving an
+ * admin to select sixteen characters by hand.
+ */
+export function IssuedPassword({ username, password }: { username: string; password: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div data-issued-password className="rounded-[8px] border border-gold-wash bg-gold-faint p-4">
+      <p className="text-[13px] text-ink">
+        New password for <strong className="font-semibold">{username}</strong>. It is shown once: copy it
+        now and hand it over yourself.
+      </p>
+      <p className="mt-3 flex flex-wrap items-center gap-3">
+        <code className="tnum select-all rounded-[4px] border border-edge bg-panel px-3 py-2 text-[14px] text-ink">
+          {password}
+        </code>
+        <button
+          type="button"
+          className="btn-outline btn-sm"
+          onClick={() => {
+            void navigator.clipboard
+              ?.writeText(password)
+              .then(() => setCopied(true))
+              .catch(() => setCopied(false));
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </p>
+    </div>
+  );
+}
+
+/**
  * One person's account, opened over the People list.
  *
  * Who they are at the top, and under it the four things an admin can change:
@@ -34,6 +70,10 @@ function day(iso: string | null): string {
  * Nothing is saved until Save changes, and only what changed is sent, one
  * action at a time through the account route so each keeps its own guards
  * (lib/account-edit.ts). A refusal part way says what did save.
+ *
+ * Resetting the password is separate from Save, on its own button, because it
+ * is not an edit: it happens the moment it is confirmed, signs that person out
+ * everywhere, and produces a password that has to be read here and now.
  *
  * The paperwork is not here. An agreement, a W-9 and bank details are
  * documents to read, not fields to tick, and they stay on the person's own
@@ -54,6 +94,8 @@ export function PersonDialog({
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [password, setPassword] = useState<string | null>(null);
 
   const isSelf = row.id === viewerId;
   const steps = planAccountSave(before, form);
@@ -70,6 +112,36 @@ export function PersonDialog({
       delete next[key];
       return next;
     });
+  }
+
+  async function resetPassword() {
+    if (busy || resetting) return;
+    if (
+      !confirm(
+        `Reset the password for ${row.username}? Their current password stops working and they are signed out everywhere.`,
+      )
+    ) {
+      return;
+    }
+    setResetting(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(row.id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'reset-password' }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || typeof data.password !== 'string') {
+        setError(`The password was not reset. ${data.error || 'Try again.'}`);
+        return;
+      }
+      setPassword(data.password);
+    } catch {
+      setError('Could not reach the server.');
+    } finally {
+      setResetting(false);
+    }
   }
 
   async function save(event: React.FormEvent) {
@@ -223,6 +295,30 @@ export function PersonDialog({
             ) : null}
           </fieldset>
         ) : null}
+
+        <fieldset className="block">
+          <legend className="field-label">Password</legend>
+          {password ? (
+            <div className="mt-2.5">
+              <IssuedPassword username={row.username} password={password} />
+            </div>
+          ) : (
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <button
+                type="button"
+                className="btn-outline btn-sm"
+                disabled={busy || resetting}
+                aria-busy={resetting}
+                onClick={resetPassword}
+              >
+                <BusyLabel busy={resetting} idle="Reset password" busyLabel="Resetting…" />
+              </button>
+              <span className="text-[12px] leading-relaxed text-ink-soft">
+                Issues a new one, shown here once. They are signed out everywhere.
+              </span>
+            </div>
+          )}
+        </fieldset>
 
         <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-edge pt-5">
           <Link href={`/users/${encodeURIComponent(row.id)}`} className="link-text text-[13px] font-medium">
