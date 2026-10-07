@@ -13,6 +13,7 @@ import { ApprovalPill } from './ApprovalPill';
 import { awaitingReview, isBypassed, NO_BYPASS, type Approval, type Bypass } from '@/lib/approval';
 import { PERSON_ROLES, personRole, ROLE_LABELS, type PersonRole } from '@/lib/roles';
 import { DEFAULT_SERVICES, servicesProblem, type Service } from '@/lib/services';
+import { Modal } from '@/components/Modal';
 import { ServiceBoxes, ServiceChips } from '@/components/ServicesSelect';
 
 export type AccountRow = {
@@ -160,6 +161,9 @@ export function UsersPanel({
      the page. Adding someone happens a handful of times a year; reading the
      list happens every week, and the form was pushing it below the fold. */
   const [adding, setAdding] = useState(false);
+  /* What went wrong creating somebody, said inside the dialog. The page's own
+     alert sits behind it while it is open, where nobody would read it. */
+  const [formError, setFormError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [role, setRole] = useState<RoleFilter>('all');
   const [status, setStatus] = useState<StatusFilter>('all');
@@ -302,6 +306,7 @@ export function UsersPanel({
     }
     setBusy('create');
     setError(null);
+    setFormError(null);
     setFieldErrors({});
     try {
       const response = await fetch('/api/users', {
@@ -318,7 +323,7 @@ export function UsersPanel({
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(data.error || 'Could not create that account.');
+        setFormError(data.error || 'Could not create that account.');
         if (data.fields) setFieldErrors(data.fields);
         return;
       }
@@ -337,7 +342,7 @@ export function UsersPanel({
       setAdding(false);
       router.refresh();
     } catch {
-      setError('Could not reach the server.');
+      setFormError('Could not reach the server.');
     } finally {
       setBusy(null);
       setRunning(null);
@@ -461,102 +466,61 @@ export function UsersPanel({
         </p>
       ) : null}
 
-      {/* Add someone — a drawer, opened from the toolbar below */}
-      {adding ? (
-        <section className="panel mt-5 overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-b border-edge px-5 py-3.5">
-            <h2 className="text-[13px] font-semibold uppercase tracking-[0.03em] text-ink-soft">
-              Add someone
-            </h2>
-            <button type="button" className="btn-quiet btn-sm" onClick={() => setAdding(false)}>
-              Cancel
-            </button>
+      {/*
+        Add someone, in a dialog over the list. It used to open as a block
+        above the table, which pushed the list down the page and left a
+        two-column form whose halves never lined up, because a row of role
+        buttons and a text box are not the same height. One column now, in the
+        order somebody fills it in, with name and email as the only pair.
+      */}
+      <Modal
+        open={adding}
+        title="Add someone"
+        onClose={() => {
+          setAdding(false);
+          setFormError(null);
+        }}
+      >
+        <form onSubmit={create} className="mt-5 flex flex-col gap-6">
+          <p className="plain">
+            The password is generated here and shown once. Nothing stores it, so if it is lost the
+            only way forward is to reset it.
+          </p>
+
+          <div data-form-error aria-live="polite">
+            {formError ? (
+              <p role="alert" className="warn-note">
+                <span aria-hidden className="warn-note-mark">
+                  ⚠
+                </span>
+                <span>{formError}</span>
+              </p>
+            ) : null}
           </div>
 
-          <form onSubmit={create} className="grid gap-5 p-5 lg:grid-cols-2">
-            <p className="plain lg:col-span-2">
-              The password is generated here and shown once. Nothing stores it, so if it is lost the
-              only way forward is to reset it.
-            </p>
+          <label className="block">
+            <span className="field-label">Username</span>
+            <input
+              ref={formRef}
+              className="field mt-1.5"
+              value={fields.username}
+              onChange={(e) => set('username', softUsername(e.target.value))}
+              placeholder="arthur"
+              autoComplete="off"
+              spellCheck={false}
+              required
+              aria-describedby="username-note"
+              aria-invalid={fieldErrors.username ? true : undefined}
+            />
+            <span id="username-note" className="field-note">
+              What they type to sign in. Lowercase letters, numbers, dot, dash and underscore.
+            </span>
+            {fieldErrors.username ? <span className="field-error">{fieldErrors.username}</span> : null}
+          </label>
 
-            <label className="block">
-              <span className="field-label">Username</span>
-              <input
-                ref={formRef}
-                className="field mt-1.5"
-                value={fields.username}
-                onChange={(e) => set('username', softUsername(e.target.value))}
-                placeholder="arthur"
-                autoComplete="off"
-                spellCheck={false}
-                required
-                aria-describedby="username-note"
-                aria-invalid={fieldErrors.username ? true : undefined}
-              />
-              <span id="username-note" className="field-note">
-                What they type to sign in. Lowercase letters, numbers, dot, dash and underscore.
-              </span>
-              {fieldErrors.username ? (
-                <span className="field-error">{fieldErrors.username}</span>
-              ) : null}
-            </label>
-
-            <fieldset className="block">
-              <legend className="field-label">What they can see</legend>
-              <div className="mt-1.5 flex flex-wrap gap-2.5">
-                {(
-                  [
-                    ['affiliate', 'Affiliate: their own links only'],
-                    ['lgf_employee', 'LGF - Employee: their own links only'],
-                    ['admin', 'Admin: everything, and can add people'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <label
-                    key={value}
-                    className="pill-filter cursor-pointer"
-                    data-active={fields.role === value}
-                  >
-                    <input
-                      type="radio"
-                      name="role"
-                      value={value}
-                      checked={fields.role === value}
-                      onChange={() => set('role', value)}
-                      className="sr-only"
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              <span className="field-note">
-                {affiliate
-                  ? 'A six-character tracking key is generated with the account. It becomes the ?usr= on their links, and it decides which rows they can see.'
-                  : 'An admin sees every person’s numbers and is the only role that can create links, record approvals and add people.'}
-              </span>
-            </fieldset>
-
-            {affiliate ? (
-              <fieldset className="block">
-                <legend className="field-label">What they are onboarded for</legend>
-                <div className="mt-2.5">
-                  <ServiceBoxes
-                    value={fields.services}
-                    onChange={(next) => set('services', next)}
-                    disabled={busy === 'create'}
-                  />
-                </div>
-                {fieldErrors.services ? (
-                  <span role="alert" className="field-note text-alarm">
-                    {fieldErrors.services}
-                  </span>
-                ) : (
-                  <span className="field-note">
-                    Tick one or both. You can change this later from their page.
-                  </span>
-                )}
-              </fieldset>
-            ) : null}
-
+          {/* The one pair. Both are a label, a box and a note, so they are the
+              same height and their boxes sit on one line. */}
+          <div className="grid gap-x-5 gap-y-6 sm:grid-cols-2">
             <label className="block">
               <span className="field-label">Full name</span>
               <input
@@ -580,25 +544,90 @@ export function UsersPanel({
                 autoComplete="off"
                 aria-invalid={fieldErrors.email ? true : undefined}
               />
-              <span className="field-note">
-                Optional, and nothing is sent to it. The password is handed over by you.
-              </span>
+              <span className="field-note">Optional. Used for approval and payout emails.</span>
               {fieldErrors.email ? <span className="field-error">{fieldErrors.email}</span> : null}
             </label>
+          </div>
 
-            <div className="lg:col-span-2">
-              <button
-                type="submit"
-                className="btn-gold"
-                disabled={busy === 'create'}
-                aria-busy={busy === 'create'}
-              >
-                <BusyLabel busy={busy === 'create'} idle="Create account" busyLabel="Creating…" />
-              </button>
+          <fieldset className="block">
+            <legend className="field-label">What they can see</legend>
+            <div className="mt-2.5 flex flex-col gap-2.5">
+              {(
+                [
+                  ['affiliate', 'Affiliate', 'Their own links, leads and earnings only.'],
+                  ['lgf_employee', 'LGF - Employee', 'An LGF employee. Sees what an affiliate does.'],
+                  ['admin', 'Admin', 'Everybody’s numbers, and can create links, record approvals and add people.'],
+                ] as const
+              ).map(([value, label, meaning]) => (
+                <label key={value} className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="radio"
+                    name="role"
+                    value={value}
+                    checked={fields.role === value}
+                    onChange={() => set('role', value)}
+                    className="mt-0.5 h-4 w-4 flex-none accent-navy"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[14px] font-medium text-ink">{label}</span>
+                    <span className="block text-[12px] leading-relaxed text-ink-soft">{meaning}</span>
+                  </span>
+                </label>
+              ))}
             </div>
-          </form>
-        </section>
-      ) : null}
+            {affiliate ? (
+              <span className="field-note">
+                A six-character tracking key is generated with the account. It becomes the ?usr= on
+                their links, and it decides which rows they can see.
+              </span>
+            ) : null}
+          </fieldset>
+
+          {affiliate ? (
+            <fieldset className="block">
+              <legend className="field-label">What they are onboarded for</legend>
+              <div className="mt-2.5">
+                <ServiceBoxes
+                  value={fields.services}
+                  onChange={(next) => set('services', next)}
+                  disabled={busy === 'create'}
+                />
+              </div>
+              {fieldErrors.services ? (
+                <span role="alert" className="field-error">
+                  {fieldErrors.services}
+                </span>
+              ) : (
+                <span className="field-note">
+                  Tick one or both. You can change this later from their page.
+                </span>
+              )}
+            </fieldset>
+          ) : null}
+
+          <div className="flex flex-wrap justify-end gap-2.5 border-t border-edge pt-5">
+            <button
+              type="button"
+              className="btn-outline"
+              disabled={busy === 'create'}
+              onClick={() => {
+                setAdding(false);
+                setFormError(null);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-gold"
+              disabled={busy === 'create'}
+              aria-busy={busy === 'create'}
+            >
+              <BusyLabel busy={busy === 'create'} idle="Create account" busyLabel="Creating…" />
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* The list */}
       <div className="panel mt-5 overflow-hidden">
@@ -663,10 +692,13 @@ export function UsersPanel({
           <button
             type="button"
             className="btn-gold"
-            aria-expanded={adding}
-            onClick={() => setAdding((open) => !open)}
+            aria-haspopup="dialog"
+            onClick={() => {
+              setFormError(null);
+              setAdding(true);
+            }}
           >
-            {adding ? 'Close form' : '+ Add account'}
+            + Add account
           </button>
         </div>
 
