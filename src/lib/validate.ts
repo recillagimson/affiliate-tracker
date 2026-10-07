@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PERSON_ROLES } from './roles';
+import { DEFAULT_SERVICES, normalizeServices, SERVICES } from './services';
 import { isSendableUrl } from './campaigns';
 import { RESERVED_SLUGS } from './config';
 import { LEAD_STATUSES } from './status';
@@ -226,6 +227,16 @@ export const usernameSchema = z
  * links, leads and earnings — the unique index would stop the second one, but
  * only after the request had already tried.
  */
+/**
+ * The services somebody is onboarded for, as a form posts them: at least one,
+ * only ones that exist, and stored once each in the order they are shown.
+ */
+export const servicesSchema = z
+  .array(z.enum(SERVICES))
+  .min(1, 'Tick at least one service')
+  .max(SERVICES.length * 4)
+  .transform((values) => normalizeServices(values));
+
 export const newUserSchema = z.object({
   username: usernameSchema,
   role: z.enum(PERSON_ROLES),
@@ -234,6 +245,9 @@ export const newUserSchema = z.object({
     .union([z.literal(''), z.string().trim().email('Enter a valid email')])
     .optional()
     .default(''),
+  // Left out, somebody is on personal cards, which is what an account was
+  // before there was a choice. Ignored for an admin, by the route.
+  services: servicesSchema.optional().default([...DEFAULT_SERVICES]),
 });
 
 export type NewUserInput = z.infer<typeof newUserSchema>;
@@ -244,6 +258,7 @@ export const userPatchSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('enable') }),
   z.object({ action: z.literal('disable') }),
   z.object({ action: z.literal('set-role'), role: z.enum(PERSON_ROLES) }),
+  z.object({ action: z.literal('set-services'), services: servicesSchema }),
 ]);
 
 /** One role for several people, from the People list. */

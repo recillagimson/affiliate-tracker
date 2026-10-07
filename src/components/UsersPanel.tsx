@@ -12,6 +12,8 @@ import { BusyLabel } from './Spinner';
 import { ApprovalPill } from './ApprovalPill';
 import { awaitingReview, isBypassed, NO_BYPASS, type Approval, type Bypass } from '@/lib/approval';
 import { PERSON_ROLES, personRole, ROLE_LABELS, type PersonRole } from '@/lib/roles';
+import { DEFAULT_SERVICES, servicesProblem, type Service } from '@/lib/services';
+import { ServiceBoxes, ServiceChips } from '@/components/ServicesSelect';
 
 export type AccountRow = {
   id: string;
@@ -19,6 +21,8 @@ export type AccountRow = {
   role: 'admin' | 'affiliate';
   /** An affiliate who is an LGF employee. Shown as its own role; see lib/roles. */
   lgfEmployee?: boolean;
+  /** What they are onboarded for. Absent for an admin, who is not. */
+  services?: Service[];
   usr: string;
   fullName: string;
   email: string;
@@ -39,11 +43,12 @@ type Fields = {
   role: PersonRole;
   fullName: string;
   email: string;
+  services: Service[];
 };
 
 type RoleFilter = 'all' | PersonRole;
 
-const EMPTY: Fields = { username: '', role: 'affiliate', fullName: '', email: '' };
+const EMPTY: Fields = { username: '', role: 'affiliate', fullName: '', email: '', services: [...DEFAULT_SERVICES] };
 
 function softUsername(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9._-]+/g, '');
@@ -290,6 +295,11 @@ export function UsersPanel({
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
+    const noService = fields.role === 'admin' ? '' : servicesProblem(fields.services);
+    if (noService) {
+      setFieldErrors({ services: noService });
+      return;
+    }
     setBusy('create');
     setError(null);
     setFieldErrors({});
@@ -302,6 +312,8 @@ export function UsersPanel({
           role: fields.role,
           fullName: fields.fullName.trim(),
           email: fields.email.trim(),
+          // An admin is onboarded for nothing; the route ignores it for them.
+          services: fields.role === 'admin' ? undefined : fields.services,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -522,6 +534,28 @@ export function UsersPanel({
                   : 'An admin sees every person’s numbers and is the only role that can create links, record approvals and add people.'}
               </span>
             </fieldset>
+
+            {affiliate ? (
+              <fieldset className="block">
+                <legend className="field-label">What they are onboarded for</legend>
+                <div className="mt-2.5">
+                  <ServiceBoxes
+                    value={fields.services}
+                    onChange={(next) => set('services', next)}
+                    disabled={busy === 'create'}
+                  />
+                </div>
+                {fieldErrors.services ? (
+                  <span role="alert" className="field-note text-alarm">
+                    {fieldErrors.services}
+                  </span>
+                ) : (
+                  <span className="field-note">
+                    Tick one or both. You can change this later from their page.
+                  </span>
+                )}
+              </fieldset>
+            ) : null}
 
             <label className="block">
               <span className="field-label">Full name</span>
@@ -764,6 +798,9 @@ export function UsersPanel({
                           >
                             {ROLE_LABELS[personRole(row.role, Boolean(row.lgfEmployee))]}
                           </span>
+                          {row.role === 'affiliate' && row.services ? (
+                            <ServiceChips services={row.services} />
+                          ) : null}
                           {/* Disabled is the state worth interrupting for: the
                               account is still listed and still cannot sign in. */}
                           {row.active ? null : (

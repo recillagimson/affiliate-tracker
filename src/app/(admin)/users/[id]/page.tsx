@@ -15,8 +15,9 @@ import { toE164 } from '@/lib/phone';
 import { smsConfigured, testNumber } from '@/lib/sms';
 import { readSmsSettings, recentTexts } from '@/lib/sms-store';
 import { RoleSelect } from '@/components/RoleSelect';
+import { ServicesSelect } from '@/components/ServicesSelect';
 import { personRole } from '@/lib/roles';
-import { findUserById, isLgfEmployee, usersEnabled } from '@/lib/users';
+import { findUserById, isLgfEmployee, readUserServices, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -60,6 +61,8 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     recentTexts(id).catch(() => null),
   ]);
   const lgfEmployee = account.role === 'affiliate' && (await isLgfEmployee(id).catch(() => false));
+  // Null for an admin, who is not onboarded for anything.
+  const services = account.role === 'affiliate' ? await readUserServices(id).catch(() => null) : null;
   const state = progress?.state ?? null;
   const approval = progress?.approval ?? { ...UNREVIEWED };
   const bypass = progress?.bypass ?? { ...NO_BYPASS };
@@ -114,6 +117,25 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           />
         </div>
       </section>
+
+      {services ? (
+        <section className="panel mt-5 p-6 sm:p-7">
+          <h2 className="text-[15px] font-semibold">Services</h2>
+          <p className="plain mt-1.5">
+            What this person is onboarded for. Tick Tradelines to add it for somebody already on
+            Personal Cards.
+          </p>
+          <div className="mt-4">
+            <ServicesSelect
+              // Remounted when what is on file changes, so the boxes start
+              // from the saved list after a save.
+              key={services.join()}
+              userId={account.id}
+              current={services}
+            />
+          </div>
+        </section>
+      ) : null}
 
       {/* Step 1 */}
       <section className="panel mt-5 p-6 sm:p-7">

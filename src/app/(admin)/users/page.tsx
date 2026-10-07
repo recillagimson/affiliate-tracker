@@ -5,7 +5,8 @@ import { authConfigured } from '@/lib/auth';
 import { NO_BYPASS, UNREVIEWED } from '@/lib/approval';
 import { NOTHING_DONE } from '@/lib/onboarding';
 import { listOnboarding } from '@/lib/onboarding-store';
-import { listLgfEmployeeIds, listUsers, usersEnabled } from '@/lib/users';
+import { normalizeServices } from '@/lib/services';
+import { listLgfEmployeeIds, listUserServices, listUsers, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -77,6 +78,10 @@ export default async function UsersPage() {
   // cannot be read: everybody then shows as admin or affiliate, which is true.
   const lgfEmployees = await listLgfEmployeeIds().catch(() => new Set<string>());
 
+  // What each person is onboarded for. An empty map when it cannot be read,
+  // and then everybody shows as personal cards, which is the default.
+  const services = await listUserServices().catch(() => new Map());
+
   let rows: AccountRow[];
   try {
     rows = (await listUsers()).map((user) => ({
@@ -84,6 +89,7 @@ export default async function UsersPage() {
       username: user.username,
       role: user.role,
       lgfEmployee: user.role === 'affiliate' && lgfEmployees.has(user.id),
+      services: user.role === 'affiliate' ? normalizeServices(services.get(user.id)) : undefined,
       usr: user.usr,
       fullName: user.fullName,
       email: user.email,
@@ -123,7 +129,7 @@ export default async function UsersPage() {
         <p className="mt-3 max-w-[680px] text-[13px] leading-relaxed text-ink-soft">
           Everyone who can sign in. An affiliate or LGF - Employee account is tied to one tracking
           key and sees only the links, leads and earnings recorded against it. An admin sees all of
-          it. Change somebody&rsquo;s role from their page.
+          it. Change somebody&rsquo;s role, or the services they are onboarded for, from their page.
         </p>
         {viewer.isEnvAdmin ? (
           <p className="plain-note mt-4 max-w-[680px]">

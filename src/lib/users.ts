@@ -21,6 +21,7 @@ import { generatePassword, hashPassword, needsRehash, verifyPassword } from './p
 import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './store/errors';
 import { getSupabaseClient, isSupabaseConfigured } from './store/supabase';
 import { accessRole, type PersonRole } from './roles';
+import { normalizeServices, type Service } from './services';
 import { newTrackingKey } from './tracking-key';
 
 /** What the UI is allowed to see. The hash never leaves this module. */
@@ -500,6 +501,60 @@ export async function setLgfEmployee(id: string, lgfEmployee: boolean): Promise<
   requireUsers();
   const { error } = await getSupabaseClient().from('users').update({ lgf_employee: lgfEmployee }).eq('id', id);
   if (error) fail('saving the role', error);
+}
+
+/* ------------------------------------------------------------------ */
+/* Services                                                             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Read and written on their own, never as part of PUBLIC_COLUMNS, the way
+ * lgf_employee is. Naming the column in the query every page runs would make
+ * every page fail on a database that has not had migration 20261009120000
+ * yet. This way the worst that happens before it is run is that everybody
+ * reads as personal cards, which is what they are.
+ */
+
+const SERVICES_MISSING =
+  'Services are not set up in this database yet. Run the 20261009120000_user_services migration, then save again.';
+
+/** What everybody is onboarded for, by account id. Empty, not an error, if it cannot be read. */
+export async function listUserServices(): Promise<Map<string, Service[]>> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient().from('users').select('id, services');
+  const out = new Map<string, Service[]>();
+  if (error) return out;
+  for (const row of (data ?? []) as { id: string; services?: unknown }[]) {
+    out.set(String(row.id), normalizeServices(row.services));
+  }
+  return out;
+}
+
+/** What one person is onboarded for. Personal cards if it cannot be read, which is the default. */
+export async function readUserServices(id: string): Promise<Service[]> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient().from('users').select('services').eq('id', id).maybeSingle();
+  if (error) return normalizeServices(undefined);
+  return normalizeServices((data as { services?: unknown } | null)?.services);
+}
+
+/** Set what somebody is onboarded for. The list is stored once each, in the usual order. */
+export async function setUserServices(id: string, services: readonly Service[]): Promise<Service[]> {
+  requireUsers();
+  const next = normalizeServices(services);
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .update({ services: next })
+    .eq('id', id)
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    // The column is not there: the migration has not been run on this database.
+    if (error.code === '42703' || error.code === 'PGRST204') throw new StoreConfigError(SERVICES_MISSING);
+    fail('saving the services', error);
+  }
+  if (!data) throw new StoreNotFoundError('That account no longer exists.');
+  return next;
 }
 
 /**

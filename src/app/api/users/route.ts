@@ -4,7 +4,8 @@ import { ZodError } from 'zod';
 import { authConfigured } from '@/lib/auth';
 import { statusForError } from '@/lib/store';
 import { fieldErrors, newUserSchema } from '@/lib/validate';
-import { createUser, listUsers, setLgfEmployee, usersEnabled } from '@/lib/users';
+import { DEFAULT_SERVICES } from '@/lib/services';
+import { createUser, listUsers, setLgfEmployee, setUserServices, usersEnabled } from '@/lib/users';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
@@ -103,6 +104,29 @@ export async function POST(request: Request) {
             user,
             password,
             warning: `Created as an Affiliate. Could not mark them LGF - Employee: ${
+              error instanceof Error ? error.message : 'unknown error'
+            }`,
+          },
+          { status: 201 },
+        );
+      }
+    }
+    /*
+     * What they are onboarded for, written after the account for the same
+     * reason the LGF marker is: creating somebody never names a column an
+     * older database may not have. Only written when it differs from what the
+     * column defaults to, so an ordinary cards-only account is one write, as
+     * it always was. An admin is onboarded for nothing and is skipped.
+     */
+    if (accessRole(input.role) !== 'admin' && input.services.join() !== DEFAULT_SERVICES.join()) {
+      try {
+        await setUserServices(user.id, input.services);
+      } catch (error) {
+        return NextResponse.json(
+          {
+            user,
+            password,
+            warning: `Created on Personal Cards only. Their services did not save: ${
               error instanceof Error ? error.message : 'unknown error'
             }`,
           },

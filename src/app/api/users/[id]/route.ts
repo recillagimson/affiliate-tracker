@@ -11,6 +11,7 @@ import {
   resetUserPassword,
   setUserActive,
   setUserRole,
+  setUserServices,
   usersEnabled,
 } from '@/lib/users';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
@@ -107,6 +108,17 @@ export async function PATCH(request: Request, { params }: Context) {
     const target = await findUserById(id);
     if (!target) {
       return NextResponse.json({ error: 'That account no longer exists.' }, { status: 404 });
+    }
+
+    // Its own branch, ahead of the lock-out guards: changing what somebody is
+    // onboarded for cannot lock anybody out, so none of them apply. An admin
+    // is not onboarded for anything, so there is nothing to set.
+    if (patch.action === 'set-services') {
+      if (target.role === 'admin') {
+        return forbidden('An admin is not onboarded for a service. Change their role first.');
+      }
+      const services = await setUserServices(id, patch.services);
+      return NextResponse.json({ user: target, services });
     }
 
     const blocked = await blockedReason(
