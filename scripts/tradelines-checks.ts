@@ -221,6 +221,27 @@ check('every open date', current.rows.map((row) => row.openDate).join() === '201
 check('every name', current.rows.filter((row) => row.name === 'Capital One').length === 10 && current.rows[3]!.name === 'Capital One Walmart');
 check('ages still sort as numbers, not as text', sortTradelines(current.rows.map((row, n) => ({ ...row, id: String(n + 1), issuer: 'capital-one' as const })), 'age', 'desc').map((row) => row.age).slice(0, 3).join() === '16.46,16.10,15.19');
 
+console.log('- saved as CSV and pasted -');
+const CSV = [
+  'Issuer/Type,Credit Limit,Open Date,Age (Years),User Price',
+  'PNC Visa,$800,28-May-20,5.25,$800.00',
+  'PNC,"$1,000",16-May-15,10.28,$700.00',
+  'PNC,"$20,000",26-Jun-14,11.17,"$1,000.00"',
+  'PNC,"$23,000",10-Jun-15,10.22,"$1,050.00"',
+].join('\n');
+const csv = parsePaste(CSV, '2026-10-08');
+check('comma-separated rows are read, header skipped', csv.rows.length === 4 && csv.problems.length === 0, csv);
+check('a quoted amount with a comma in it is one amount', csv.rows[1]!.creditLimit === 1000 && csv.rows[2]!.creditLimit === 20000 && csv.rows[2]!.userPrice === 1000 && csv.rows[3]!.userPrice === 1050);
+check('an unquoted one is read too', csv.rows[0]!.creditLimit === 800 && csv.rows[0]!.userPrice === 800 && csv.rows[0]!.name === 'PNC Visa');
+check('ages and dates come across', csv.rows[0]!.age === '5.25' && csv.rows[3]!.openDate === '2015-06-10');
+const quotedName = parsePaste('"Citi, Double Cash","$7,500",3-Mar-15,10.5,$450.00\n', '2026-10-08');
+check('a quoted name with a comma in it stays one name', quotedName.rows.length === 1 && quotedName.rows[0]!.name === 'Citi, Double Cash');
+const doubled = parsePaste('"Citi ""Plus""","$7,500",3-Mar-15,10.5,$450.00\n', '2026-10-08');
+check('a doubled quote inside quotes is one quote', doubled.rows[0]?.name === 'Citi "Plus"');
+check('one value per line is still read as that, commas in its amounts and all', handed.rows.length === 14 && handed.rows[3]!.creditLimit === 1524);
+const badCsv = parsePaste('PNC,"$1,000",16-May-15,10.28,$700.00\nPNC,call us,16-May-15,10.28,$700.00\n', '2026-10-08');
+check('a bad row in a CSV is reported with its line', badCsv.rows.length === 1 && badCsv.problems.length === 1 && badCsv.problems[0]!.line === 2);
+
 console.log('- copied straight from a spreadsheet -');
 const tabbed = parsePaste('Issuer/Type\tCredit Limit\tOpen Date\tAge (Years)\nCiti Double Cash\t$7,500\t3-Mar-15\t10.5\nCiti Simplicity\t$2,000\t2016-01-20\t9.6\n', TODAY);
 check('two rows, header skipped', tabbed.rows.length === 2 && tabbed.problems.length === 0, tabbed);

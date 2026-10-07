@@ -697,7 +697,8 @@ function PasteDialog({
           />
           <span className="field-note">
             Copy the Issuer/Type, Credit Limit, Open Date, Age (Years) and User Price columns, in that order, and paste them
-            here. A header row is fine, and the last two columns can be left out. The age is saved exactly as pasted.
+            here. Copied cells and CSV both work. A header row is fine, and the last two columns can be left out. The age is
+            saved exactly as pasted.
           </span>
         </label>
 

@@ -391,12 +391,47 @@ function rowProblem(
 }
 
 /**
+ * One line of a CSV file, split into its cells.
+ *
+ * A cell in double quotes may hold commas, which is how a sheet writes
+ * "$1,000" without it becoming two cells, and a doubled quote inside quotes
+ * is one quote. Anything else splits on commas.
+ */
+function splitCsv(line: string): string[] {
+  const cells: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let at = 0; at < line.length; at++) {
+    const char = line[at]!;
+    if (quoted) {
+      if (char === '"' && line[at + 1] === '"') {
+        cell += '"';
+        at += 1;
+      } else if (char === '"') quoted = false;
+      else cell += char;
+    } else if (char === '"' && cell.trim() === '') {
+      quoted = true;
+      cell = '';
+    } else if (char === ',') {
+      cells.push(cell.trim());
+      cell = '';
+    } else cell += char;
+  }
+  cells.push(cell.trim());
+  return cells;
+}
+
+/**
  * Rows copied out of a spreadsheet, read into tradelines.
  *
- * Two shapes arrive, and which one is told from whether there is a tab in it.
- * Cells copied from a sheet come across with tabs between them, one row a
- * line. The same table copied out of a chat or a document comes as one value
- * per line: a name, a limit, a date, and sometimes the age. Either may start
+ * Three shapes arrive. Cells copied from a sheet come across with tabs
+ * between them, one row a line. A sheet saved as CSV has commas instead, with
+ * quotes round any amount that has a comma of its own. And the same table
+ * copied out of a chat or a document comes as one value per line: a name, a
+ * limit, a date, and sometimes the age and the price. A tab anywhere means
+ * the first; failing that, every line splitting into three or more
+ * comma-separated cells means the second, which one value per line never
+ * does, since "$1,524" on its own is only two. Either may start
  * with the sheet's header, which is skipped, and either may carry the age
  * column, which is kept exactly as written: see the note at the top of this
  * file.
@@ -424,10 +459,14 @@ export function parsePaste(text: string, today: string): PasteResult {
     rows.push(value);
   }
 
-  if (lines.some((line) => line.includes('\t'))) {
+  const tabbed = lines.some((line) => line.includes('\t'));
+  const written = lines.filter((line) => line.trim() !== '');
+  const csv = !tabbed && written.length > 0 && written.every((line) => splitCsv(line).length >= 3);
+
+  if (tabbed || csv) {
     lines.forEach((raw, index) => {
       if (raw.trim() === '') return;
-      const cells = raw.split('\t').map((cell) => cell.trim());
+      const cells = csv ? splitCsv(raw) : raw.split('\t').map((cell) => cell.trim());
       // The header: its second cell names a column instead of holding an amount.
       if (isHeader(cells[0] ?? '') && parseLimit(cells[1] ?? '') === null) return;
       take(index + 1, cells.filter(Boolean).join(' | '), cells[0] ?? '', cells[1] ?? '', cells[2] ?? '', cells[3] ?? '', cells[4] ?? '');
