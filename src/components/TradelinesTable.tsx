@@ -50,22 +50,23 @@ import {
  */
 
 /**
- * How large, in pixels, each logo's square is drawn inside a frame 72 high.
+ * How large, in pixels, each logo's square is drawn inside a frame 44 high.
  * Worked out from where the mark sits in each file, so that the mark itself
- * comes out about 140 wide or 68 tall, whichever it reaches first. A new
- * logo file needs its own number here; 120 shows any square whole-ish.
+ * comes out about 86 wide or 40 tall, whichever it reaches first. A new logo
+ * file needs its own number here; 74 shows any square whole-ish.
  */
 const LOGO_SIZE: Record<IssuerKey, number> = {
-  'capital-one': 180, // wide wordmark: 78% of the width, 28% of the height
-  citi: 136, // 76% wide, 46% tall with its arc
-  discover: 180, // 77% wide, a thin strip
-  'fidelity-elan': 180, // 77% wide
-  pnc: 90, // stacked: 59% wide, 76% tall
-  'us-bank': 175, // 80% wide
+  'capital-one': 110, // wide wordmark: 78% of the width, 28% of the height
+  citi: 84, // 76% wide, 46% tall with its arc
+  discover: 110, // 77% wide, a thin strip
+  'fidelity-elan': 110, // 77% wide
+  pnc: 56, // stacked: 59% wide, 76% tall
+  'us-bank': 107, // 80% wide
 };
+
 export function IssuerTabs({ current, counts }: { current: IssuerKey; counts: Record<IssuerKey, number> }) {
   return (
-    <nav aria-label="Issuers" className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+    <nav aria-label="Issuers" className="mt-5 flex flex-wrap gap-2">
       {TRADELINE_ISSUERS.map((issuer, index) => {
         const active = issuer.key === current;
         return (
@@ -74,11 +75,11 @@ export function IssuerTabs({ current, counts }: { current: IssuerKey; counts: Re
             href={index === 0 ? '/tradelines' : `/tradelines?issuer=${issuer.key}`}
             data-active={active ? 'true' : 'false'}
             aria-current={active ? 'page' : undefined}
-            className={`group relative flex flex-col items-center overflow-hidden rounded-[10px] border bg-white px-3 pb-3 pt-2 text-center transition-colors ${
+            className={`group relative flex w-[132px] flex-col items-center overflow-hidden rounded-[8px] border bg-white px-2 pb-2 pt-1 text-center transition-colors ${
               active ? 'border-navy shadow-[0_0_0_1px_var(--color-navy)]' : 'border-edge hover:border-edge-strong'
             }`}
           >
-            <span className="relative block h-[72px] w-full overflow-hidden">
+            <span className="relative block h-[44px] w-full overflow-hidden">
               {/* A plain img: a small static file from this app's own public
                   folder, with nothing for next/image to optimise. */}
               <img
@@ -91,13 +92,13 @@ export function IssuerTabs({ current, counts }: { current: IssuerKey; counts: Re
                 className="absolute left-1/2 top-1/2 max-w-none -translate-x-1/2 -translate-y-1/2"
               />
             </span>
-            <span className={`mt-1 block text-[12px] leading-tight ${active ? 'font-semibold text-ink' : 'font-medium text-ink-soft'}`}>
+            <span className={`block text-[11px] leading-tight ${active ? 'font-semibold text-ink' : 'font-medium text-ink-soft'}`}>
               {issuer.label}
             </span>
-            <span className="tnum mt-1 block text-[11px] text-ink-dim">
+            <span className="tnum mt-0.5 block text-[10px] text-ink-dim">
               <span>{counts[issuer.key] ?? 0}</span> {(counts[issuer.key] ?? 0) === 1 ? 'tradeline' : 'tradelines'}
             </span>
-            <span aria-hidden className={`absolute inset-x-0 bottom-0 h-[3px] ${active ? 'bg-navy' : 'bg-transparent'}`} />
+            <span aria-hidden className={`absolute inset-x-0 bottom-0 h-[2px] ${active ? 'bg-navy' : 'bg-transparent'}`} />
           </Link>
         );
       })}
