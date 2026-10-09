@@ -17,20 +17,18 @@ import { listTradelines, tradelinesEnabled } from '@/lib/tradelines-store';
  *
  * Only the storefront's own address may read it from a browser (see
  * allowedOrigin). That is not secrecy, the list is public; it stops another
- * site presenting this stock as its own from a visitor's browser.
+ * site presenting this stock as its own from a visitor's browser. In
+ * production the header is the same on every response, so it is safe to cache.
  */
 
 export const dynamic = 'force-dynamic';
 
 function headersFor(request: Request): Record<string, string> {
-  const origin = allowedOrigin(
-    request.headers.get('origin'),
-    process.env.TRADELINES_SITE_URL,
-    process.env.NODE_ENV === 'production',
-  );
+  const production = process.env.NODE_ENV === 'production';
+  const origin = allowedOrigin(request.headers.get('origin'), process.env.TRADELINES_SITE_URL, production);
   return {
-    // The answer depends on who asked, so a cache must not hand one site's to another.
-    Vary: 'Origin',
+    // Only outside production does the answer depend on who asked.
+    ...(production ? {} : { Vary: 'Origin' }),
     ...(origin ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET, OPTIONS' } : {}),
   };
 }

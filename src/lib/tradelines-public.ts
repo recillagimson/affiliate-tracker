@@ -14,6 +14,7 @@
  * Pure. scripts/tradelines-public-checks.ts pins it.
  */
 
+import { storefrontOrigin } from './tradeline-ref';
 import { TRADELINE_ISSUERS, type IssuerKey, type Tradeline } from './tradelines';
 
 export type PublicTradeline = {
@@ -69,17 +70,19 @@ export function publicInventory(rows: readonly Tradeline[]): PublicInventory {
 const LOCAL = /^http:\/\/(localhost|127\.0\.0\.1):[0-9]{1,5}$/;
 
 /**
- * The Access-Control-Allow-Origin to answer a browser with, or '' for none.
+ * The Access-Control-Allow-Origin to answer with, or '' for none.
  *
- * The storefront's own address (TRADELINES_SITE_URL) and nothing else. Outside
- * production a site running on this machine may read it too, so the two can be
- * worked on together. Compared whole: an address that merely begins with the
- * storefront's is somebody else's.
+ * In production it is the storefront's own address (TRADELINES_SITE_URL) and
+ * nothing else, whoever asked. Always the same answer, so a cache in front of
+ * this route cannot keep one made for somebody else, without the header, and
+ * hand it to the storefront. A browser on any other site is told the
+ * storefront's address, sees it is not its own, and refuses the response.
+ *
+ * Outside production a site running on this machine is answered with its own
+ * address, so the two can be worked on together.
  */
 export function allowedOrigin(origin: string | null, siteUrl: string | undefined, production: boolean): string {
-  if (!origin) return '';
-  const site = (siteUrl ?? '').trim().replace(/\/+$/, '');
-  if (site && origin === site) return origin;
-  if (!production && LOCAL.test(origin)) return origin;
-  return '';
+  const site = storefrontOrigin(siteUrl);
+  if (!production && origin && LOCAL.test(origin)) return origin;
+  return site;
 }

@@ -52,6 +52,10 @@ check('no number, no link', tradelineLinkFor(SITE, '') === '');
 check('something that is not a number, no link', tradelineLinkFor(SITE, 'arthur-smith') === '');
 check('an address that is not a web address, no link', tradelineLinkFor('tradelines.example.com', 'TL-48213') === '' && tradelineLinkFor('javascript:alert(1)', 'TL-48213') === '');
 
+check('an address with a query on it, no link, since the number would land in the wrong place', tradelineLinkFor('https://tradelines.example.com/?utm=a', 'TL-48213') === '');
+check('nor one with a path, a fragment or a space in it', tradelineLinkFor('https://tradelines.example.com/shop', 'TL-48213') === '' && tradelineLinkFor('https://tradelines.example.com/#shop', 'TL-48213') === '' && tradelineLinkFor('https://trade lines.example.com', 'TL-48213') === '');
+check('capitals in the setting are how a browser writes it', tradelineLinkFor('HTTPS://Tradelines.Example.com', 'TL-48213') === 'https://tradelines.example.com/?ref=TL-48213');
+
 console.log('- the migration -');
 const MIGRATION = join(__dirname, '..', 'supabase', 'migrations', '20261013120000_tradeline_ref.sql');
 check('it exists under its name', existsSync(MIGRATION));

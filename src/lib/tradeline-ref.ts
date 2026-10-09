@@ -38,6 +38,31 @@ export function readTradelineRef(value: unknown): string {
 }
 
 /**
+ * The storefront's address as a browser writes it, "https://shop.example.com",
+ * from the TRADELINES_SITE_URL setting. '' when the setting is empty or is
+ * not a plain site address.
+ *
+ * Strict on purpose. A setting with a path, a query or a fragment on it would
+ * put an affiliate's number somewhere the storefront does not look, and would
+ * never match the address a browser sends when the storefront asks for the
+ * stock list. Both of those fail without anybody being told, so a setting
+ * like that counts as no setting, which shows: the link reads "Coming soon".
+ */
+export function storefrontOrigin(siteUrl: string | undefined): string {
+  const text = (siteUrl ?? '').trim();
+  if (!text || /\s/.test(text)) return '';
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return '';
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return '';
+  if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) return '';
+  return url.origin;
+}
+
+/**
  * The link an affiliate hands to a customer: the storefront, with their
  * reference number on it.
  *
@@ -46,7 +71,7 @@ export function readTradelineRef(value: unknown): string {
  * page then says the link is coming rather than showing one that goes nowhere.
  */
 export function tradelineLinkFor(siteUrl: string | undefined, ref: string): string {
-  const site = (siteUrl ?? '').trim().replace(/\/+$/, '');
-  if (!/^https?:\/\/[^\s/]+/.test(site) || !isTradelineRef(ref)) return '';
+  const site = storefrontOrigin(siteUrl);
+  if (!site || !isTradelineRef(ref)) return '';
   return `${site}/?ref=${ref}`;
 }

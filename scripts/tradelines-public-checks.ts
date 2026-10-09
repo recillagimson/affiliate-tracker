@@ -51,16 +51,17 @@ check('no tradelines at all is six empty issuers', none.tradelines.length === 0 
 
 console.log('- who may read it from a browser -');
 const SITE = 'https://tradelines.example.com';
-check('the storefront may', allowedOrigin(SITE, SITE, true) === SITE);
+check('in production the answer is always the storefront, whoever asked', allowedOrigin(SITE, SITE, true) === SITE && allowedOrigin('https://evil.example.com', SITE, true) === SITE && allowedOrigin(null, SITE, true) === SITE);
+check('so it never names another site', allowedOrigin('https://evil.example.com', SITE, true) !== 'https://evil.example.com' && allowedOrigin(`${SITE}.evil.com`, SITE, true) === SITE);
 check('with a trailing slash in the setting', allowedOrigin(SITE, `${SITE}/`, true) === SITE);
-check('another site may not', allowedOrigin('https://evil.example.com', SITE, true) === '');
-check('nor a lookalike', allowedOrigin(`${SITE}.evil.com`, SITE, true) === '');
+check('and capitals in it', allowedOrigin(SITE, 'https://Tradelines.Example.com', true) === SITE);
 check('nobody may when the setting is empty', allowedOrigin(SITE, '', true) === '' && allowedOrigin(SITE, undefined, true) === '');
-check('a request with no origin gets no header', allowedOrigin(null, SITE, true) === '');
+check('nor when it is not a plain site address', allowedOrigin(SITE, `${SITE}/shop`, true) === '' && allowedOrigin(SITE, 'tradelines.example.com', true) === '');
 check('a local site may, outside production', allowedOrigin('http://localhost:5173', SITE, false) === 'http://localhost:5173');
 check('and on 127.0.0.1', allowedOrigin('http://127.0.0.1:4173', undefined, false) === 'http://127.0.0.1:4173');
-check('but not in production', allowedOrigin('http://localhost:5173', SITE, true) === '');
-check('and not something merely starting with localhost', allowedOrigin('http://localhost.evil.com', SITE, false) === '');
+check('a local site may not in production', allowedOrigin('http://localhost:5173', '', true) === '');
+check('and not something merely starting with localhost', allowedOrigin('http://localhost.evil.com', undefined, false) === '');
+check('outside production a request with no origin gets the storefront too', allowedOrigin(null, SITE, false) === SITE);
 
 console.log(`\ntradelines-public: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
