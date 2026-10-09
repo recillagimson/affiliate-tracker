@@ -11,7 +11,7 @@ import {
   syncMessages,
   type ApprovalAnnouncement,
 } from '../src/lib/slack-messages';
-import { announce, slackConfigured } from '../src/lib/slack';
+import { announce, announceApproval, announceSync, approvalChannel, slackConfigured } from '../src/lib/slack';
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -166,6 +166,95 @@ async function transportChecks() {
   });
   const broken = await announce(['one']);
   check('a network failure is caught too', broken, 'network down');
+
+  console.log('\n— two channels: affiliates in one, LGF employees in the other —');
+  const MAIN = 'https://hooks.slack.example/T/B/MAIN';
+  const AFFILIATE = 'https://hooks.slack.example/T/B/AFFILIATE';
+  const noShare = new Set(['emp1']);
+  check('an affiliate key goes to the affiliate channel', approvalChannel('aff1', noShare), 'affiliate');
+  check('an LGF employee key stays in the first channel', approvalChannel('emp1', noShare), 'default');
+  check(
+    'a role that could not be read stays in the first channel rather than guessing',
+    approvalChannel('aff1', null),
+    'default',
+  );
+
+  process.env.SLACK_WEBHOOK_URL = MAIN;
+  process.env.SLACK_WEBHOOK_URL_AFFILIATE = AFFILIATE;
+  stubFetch(ok);
+  sent.length = 0;
+  await announceApproval(one, 'affiliate');
+  await announceApproval(one, 'default');
+  await announceApproval(one);
+  check(
+    'each approval lands in its own channel, the first one when none is named',
+    sent.map((call) => call.url),
+    [AFFILIATE, MAIN, MAIN],
+  );
+  check('and reads the same in both', sent[0]!.body, sent[1]!.body);
+
+  sent.length = 0;
+  const [first, second, third] = many(3);
+  await announceSync(
+    [
+      { ...first!, channel: 'affiliate' },
+      { ...second!, channel: 'default' },
+      { ...third!, channel: 'affiliate' },
+    ],
+    2,
+  );
+  const to = (url: string) =>
+    sent.filter((call) => call.url === url).map((call) => JSON.parse(call.body).text as string);
+  check('a sync gives the employee channel its own approvals and its own count', to(MAIN), [
+    approvalMessage(second!),
+    'QMP sync: 1 approval imported, 2 leads marked approved.',
+  ]);
+  check('and the affiliate channel its own, without counting the leads twice', to(AFFILIATE), [
+    approvalMessage(first!),
+    approvalMessage(third!),
+    'QMP sync: 2 approvals imported.',
+  ]);
+
+  sent.length = 0;
+  await announceSync([{ ...first!, channel: 'affiliate' }], 2);
+  check('a sync of affiliates alone carries the lead count itself', to(AFFILIATE).at(-1),
+    'QMP sync: 1 approval imported, 2 leads marked approved.');
+  check('and says nothing to the other channel', to(MAIN), []);
+
+  process.env.SLACK_WEBHOOK_URL = '';
+  check('the affiliate channel works without the first one', slackConfigured('affiliate'), true);
+  check('which stays off on its own', slackConfigured(), false);
+  sent.length = 0;
+  await announceSync(
+    [
+      { ...first!, channel: 'default' },
+      { ...second!, channel: 'affiliate' },
+    ],
+    1,
+  );
+  check('a channel that is off costs the other nothing, the lead count included', sent.map((call) => JSON.parse(call.body).text), [
+    approvalMessage(second!),
+    'QMP sync: 1 approval imported, 1 lead marked approved.',
+  ]);
+
+  process.env.SLACK_WEBHOOK_URL = MAIN;
+  delete process.env.SLACK_WEBHOOK_URL_AFFILIATE;
+  sent.length = 0;
+  await announceApproval(one, 'affiliate');
+  check('no second webhook means everything goes where it always did', sent[0]!.url, MAIN);
+  sent.length = 0;
+  await announceSync(
+    [
+      { ...first!, channel: 'affiliate' },
+      { ...second!, channel: 'default' },
+    ],
+    0,
+  );
+  check('and a sync is one run of messages in the order written, with one summary', to(MAIN), [
+    approvalMessage(first!),
+    approvalMessage(second!),
+    'QMP sync: 2 approvals imported.',
+  ]);
 
   globalThis.fetch = realFetch;
   delete process.env.SLACK_WEBHOOK_URL;

@@ -3,9 +3,10 @@ import { ZodError } from 'zod';
 import { isLeadId, newLeadId } from '@/lib/lead-id';
 import { manualApprovalNotes } from '@/lib/manual-approval';
 import { approvedLeadIds, mergeCards } from '@/lib/qmp-sync';
-import { announceApproval } from '@/lib/slack';
+import { announceApproval, approvalChannel } from '@/lib/slack';
 import { smsSummary, textApprovals } from '@/lib/sms';
 import { getStore, statusForError } from '@/lib/store';
+import { listNoShareKeys } from '@/lib/users';
 import { fieldErrors, manualApprovalSchema } from '@/lib/validate';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
@@ -100,16 +101,21 @@ export async function POST(request: Request, { params }: Context) {
      * After the money and after the lead, for the reason given in lib/slack:
      * nothing about announcing an approval may put recording one at risk.
      * The card is the one just picked, and the client is the lead itself,
-     * which is the whole point of approving from this list.
+     * which is the whole point of approving from this list. The channel is
+     * the affiliates' or the LGF employees', by whose link the lead came in on.
      */
-    await announceApproval({
-      person: lead.assignee,
-      campaign: lead.campaign || lead.slug,
-      card: input.card,
-      client: lead.fullName || lead.email,
-      approvedOn: input.approvedOn,
-      source: 'manual',
-    });
+    const noShare = await listNoShareKeys().catch(() => null);
+    await announceApproval(
+      {
+        person: lead.assignee,
+        campaign: lead.campaign || lead.slug,
+        card: input.card,
+        client: lead.fullName || lead.email,
+        approvedOn: input.approvedOn,
+        source: 'manual',
+      },
+      approvalChannel(lead.usr, noShare),
+    );
 
     // The affiliate whose link it was, by text. The number is theirs, from
     // their account; the lead is never texted. See lib/sms.
