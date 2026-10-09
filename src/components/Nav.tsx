@@ -2,28 +2,31 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { canOpenService } from '@/lib/access';
+import { DEFAULT_SERVICES, type Service } from '@/lib/services';
 import { badgeText } from '@/lib/support';
 
-type Item = { href: string; label: string; adminOnly?: boolean; affiliateOnly?: boolean };
+/** `service` marks a tab that belongs to one service: an affiliate has it only if they are on that service. */
+type Item = { href: string; label: string; adminOnly?: boolean; affiliateOnly?: boolean; service?: Service };
 
 const ITEMS: Item[] = [
-  { href: '/', label: 'Overview' },
-  { href: '/links', label: 'Links' },
+  { href: '/', label: 'Overview', service: 'personal_cards' },
+  { href: '/links', label: 'Links', service: 'personal_cards' },
   // Not admin-only: an affiliate may create links, but only ever their own.
   // The page hands them themselves instead of a picker, and the route decides
   // ownership again from the session whatever the form posts.
-  { href: '/links/new', label: 'Create' },
+  { href: '/links/new', label: 'Create', service: 'personal_cards' },
   // Everyone: an affiliate quoting a card needs to know what it pays as much
   // as an admin does, and none of it is anybody's personal data. Only the
   // upload on that page is admin-only, and the route enforces that itself.
-  { href: '/cpa', label: 'Cards' },
+  { href: '/cpa', label: 'Cards', service: 'personal_cards' },
   // Everyone, and the same page for both: an affiliate sees their own tickets
   // and an admin sees all of them. The page and the route decide which, from
   // the session.
   { href: '/support', label: 'Support' },
-  // The tradelines on offer, issuer by issuer. Admin-only for now: it is
-  // being loaded, and is not yet something an affiliate is shown.
-  { href: '/tradelines', label: 'Tradelines', adminOnly: true },
+  // The tradelines on offer, issuer by issuer. An admin keeps the table; an
+  // affiliate onboarded for tradelines reads it, and nobody else is shown it.
+  { href: '/tradelines', label: 'Tradelines', service: 'tradelines' },
   { href: '/reports', label: 'Reports', adminOnly: true },
   { href: '/users', label: 'People', adminOnly: true },
   // Who is owed what, and by when. Admin-only: it is everybody's money on one
@@ -44,9 +47,18 @@ const ITEMS: Item[] = [
  * Hiding a tab is presentation, not protection. Every page behind these
  * re-checks the role server-side, because a hidden link is still a URL anyone
  * can type. This exists so an affiliate is not shown doors that all say no.
+ *
+ * `services` is what an affiliate is onboarded for, and decides which of the
+ * card tabs and the tradelines tab they have (see lib/access). It means
+ * nothing for an admin, who has both.
  */
-export function visibleItems(isAdmin: boolean): Item[] {
-  return ITEMS.filter((item) => (isAdmin ? !item.affiliateOnly : !item.adminOnly));
+export function visibleItems(isAdmin: boolean, services: readonly Service[] = DEFAULT_SERVICES): Item[] {
+  const role = isAdmin ? 'admin' : 'affiliate';
+  return ITEMS.filter(
+    (item) =>
+      (isAdmin ? !item.affiliateOnly : !item.adminOnly) &&
+      (!item.service || canOpenService(role, services, item.service)),
+  );
 }
 
 /** Which item owns the current URL. `/affiliate/*` belongs to Overview — it is
@@ -94,12 +106,20 @@ function SupportBadge({ count }: { count: number }) {
  * the width of the label it belongs to with nothing between it and the next
  * one, or the row reads as a set of separate buttons again.
  */
-export function Nav({ isAdmin, supportUnread = 0 }: { isAdmin: boolean; supportUnread?: number }) {
+export function Nav({
+  isAdmin,
+  services,
+  supportUnread = 0,
+}: {
+  isAdmin: boolean;
+  services?: readonly Service[];
+  supportUnread?: number;
+}) {
   const pathname = usePathname();
 
   return (
     <nav aria-label="Sections" className="hidden items-stretch md:flex">
-      {visibleItems(isAdmin).map((item) => (
+      {visibleItems(isAdmin, services).map((item) => (
         <Link
           key={item.href}
           href={item.href}
@@ -119,7 +139,15 @@ export function Nav({ isAdmin, supportUnread = 0 }: { isAdmin: boolean; supportU
  * the thumb is. Full-width targets, 17px labels, and a thick bar over the
  * active one so "where am I" survives being read at arm's length.
  */
-export function MobileTabs({ isAdmin, supportUnread = 0 }: { isAdmin: boolean; supportUnread?: number }) {
+export function MobileTabs({
+  isAdmin,
+  services,
+  supportUnread = 0,
+}: {
+  isAdmin: boolean;
+  services?: readonly Service[];
+  supportUnread?: number;
+}) {
   const pathname = usePathname();
 
   return (
@@ -128,7 +156,7 @@ export function MobileTabs({ isAdmin, supportUnread = 0 }: { isAdmin: boolean; s
       className="fixed inset-x-0 bottom-0 z-40 border-t border-edge bg-panel pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       <div className="flex items-stretch px-2">
-        {visibleItems(isAdmin).map((item) => {
+        {visibleItems(isAdmin, services).map((item) => {
           const active = isActive(item.href, pathname);
           return (
             <Link

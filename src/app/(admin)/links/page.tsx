@@ -10,14 +10,15 @@ import { captureFormEnabled, configuredBaseUrl } from '@/lib/config';
 import { loadAll } from '@/lib/load';
 import { originFromHeaders } from '@/lib/request';
 import { affiliateUrl } from '@/lib/url';
-import { requireViewer } from '@/lib/viewer';
+import { requireService } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'Links' };
 
 export default async function LinksPage() {
-  const viewer = await requireViewer();
+  // A card page: an affiliate on tradelines alone is sent to theirs.
+  const viewer = await requireService('personal_cards');
   const isAdmin = viewer.role === 'admin';
   const { links, submissions, visits, error } = await loadAll(viewer);
   const origin = originFromHeaders(await headers(), configuredBaseUrl());

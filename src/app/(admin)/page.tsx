@@ -31,7 +31,7 @@ import { loadAll } from '@/lib/load';
 import { approvedCards, approvedLeadIds, cardForLead } from '@/lib/qmp-sync';
 import { loadApproveContext } from '@/lib/approve-context';
 // import { currentAnnouncement } from '@/lib/updates';
-import { requireViewer } from '@/lib/viewer';
+import { requireService } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,7 +65,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const month = parseMonth(firstValue(query.month));
   const capture = captureFormEnabled();
 
-  const viewer = await requireViewer();
+  // A card page: an affiliate on tradelines alone is sent to theirs.
+  const viewer = await requireService('personal_cards');
   const isAdmin = viewer.role === 'admin';
   // const announcement = currentAnnouncement(isAdmin);
 

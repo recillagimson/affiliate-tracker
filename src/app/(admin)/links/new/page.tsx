@@ -9,7 +9,7 @@ import { loadAll } from '@/lib/load';
 import { originFromHeaders } from '@/lib/request';
 import { getStore, storageStatus } from '@/lib/store';
 import { findUserById, listUsers, usersEnabled } from '@/lib/users';
-import { requireViewer } from '@/lib/viewer';
+import { requireService } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +30,8 @@ const STORAGE_NOTE = {
  * to re-decides the same thing server-side regardless of what arrives.
  */
 export default async function NewLinkPage() {
-  const viewer = await requireViewer();
+  // A card page: an affiliate on tradelines alone is sent to theirs.
+  const viewer = await requireService('personal_cards');
   const isAdmin = viewer.role === 'admin';
   const origin = originFromHeaders(await headers(), configuredBaseUrl());
 

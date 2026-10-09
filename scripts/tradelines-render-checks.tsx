@@ -10,6 +10,7 @@ import {
 } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { PathnameContext } from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
 import { visibleItems, Nav } from '../src/components/Nav';
+import { TradelineCheckouts, TradelineFigures, TradelinesSummaryPanel } from '../src/components/TradelinesSummary';
 import { issuerHref, IssuerTabs, PastePreview, pickIssuer, TradelinesBrowser, TradelinesTable } from '../src/components/TradelinesTable';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -42,7 +43,16 @@ const rows: Tradeline[] = [
 
 console.log('- the navigation -');
 check('admins have a Tradelines tab', visibleItems(true).some((item) => item.href === '/tradelines' && item.label === 'Tradelines'));
-check('affiliates do not', !visibleItems(false).some((item) => item.href === '/tradelines'));
+check('an affiliate on personal cards does not', !visibleItems(false).some((item) => item.href === '/tradelines'));
+check('nor one whose services are not said', !visibleItems(false, ['personal_cards']).some((item) => item.href === '/tradelines'));
+const tradeTabs = visibleItems(false, ['tradelines']).map((item) => item.href);
+check('an affiliate on tradelines does', tradeTabs.includes('/tradelines'));
+check('and has none of the card tabs', ['/', '/links', '/links/new', '/cpa'].every((href) => !tradeTabs.includes(href)), tradeTabs);
+check('and keeps payslip, support and profile', ['/payslips', '/support', '/profile'].every((href) => tradeTabs.includes(href)), tradeTabs);
+check('and still none of the admin tabs', ['/users', '/reports', '/payouts', '/settings'].every((href) => !tradeTabs.includes(href)));
+const bothTabs = visibleItems(false, ['personal_cards', 'tradelines']).map((item) => item.href);
+check('an affiliate on both has both', ['/', '/links', '/links/new', '/cpa', '/tradelines'].every((href) => bothTabs.includes(href)), bothTabs);
+check('an admin has every tab whatever services are passed', ['/', '/links', '/cpa', '/tradelines'].every((href) => visibleItems(true, ['tradelines']).some((item) => item.href === href)));
 const nav = renderToStaticMarkup(
   <PathnameContext.Provider value="/tradelines">
     <Nav isAdmin />
@@ -74,7 +84,7 @@ const all: Tradeline[] = [
   ...rows,
   { id: '9', issuer: 'citi', name: 'Citi Double Cash', creditLimit: 7500, openDate: '2015-03-03', age: '10.5', userPrice: 300 },
 ];
-const browser = render(<TradelinesBrowser all={all} initialIssuer="citi" today={TODAY} />);
+const browser = render(<TradelinesBrowser all={all} initialIssuer="citi" today={TODAY} canEdit />);
 check('it opens on the issuer in the address', browser.includes('Citi Double Cash') && !browser.includes('Capital One/Cabelas'));
 check('with every issuer counted from the rows it was handed', browser.includes('>3<') && browser.includes('>1<'));
 check('every issuer\'s rows are already on the page, so choosing one waits for nothing', pickIssuer(all, 'capital-one').length === 3 && pickIssuer(all, 'citi').length === 1 && pickIssuer(all, 'pnc').length === 0);
@@ -82,7 +92,7 @@ check('each address is the one a reload would open on', issuerHref('capital-one'
 check('the one showing is told apart without relying on the logo', tabs.includes('aria-current="page"'));
 
 console.log('- the table -');
-const table = render(<TradelinesTable issuer="capital-one" rows={rows} today={TODAY} />);
+const table = render(<TradelinesTable issuer="capital-one" rows={rows} today={TODAY} canEdit />);
 for (const heading of ['Issuer/Type', 'Credit Limit', 'Open Date', 'Age (Years)', 'User Price']) {
   check(`a ${heading} column`, table.includes(heading));
 }
@@ -91,7 +101,7 @@ check('its limit is written as money', table.includes('$1,524') && table.include
 check('its open date is written out', table.includes('10 Apr 2012'));
 check('its age is the pasted figure, every digit of it', table.includes('>13.38356164<') && table.includes('>7.654794521<'));
 // Rendered a year after the sheet was made: a worked-out age would be 14.5.
-check('and is not worked out from the open date', !render(<TradelinesTable issuer="capital-one" rows={rows} today="2026-10-07" />).includes('14.5'));
+check('and is not worked out from the open date', !render(<TradelinesTable issuer="capital-one" rows={rows} today="2026-10-07" canEdit />).includes('14.5'));
 check('a tradeline with no age shows none', !table.includes('NaN') && !table.includes('>0<'));
 check('an age can be typed when adding one', table.includes('name="age"'));
 check('the user price is shown as money', table.includes('>$450.00<') && table.includes('>$1,250.50<'));
@@ -102,9 +112,39 @@ check('each row can be edited and deleted', table.split('>Edit<').length === 4 &
 check('one can be added', table.includes('Add tradeline'));
 check('rows can be pasted in', table.includes('Paste rows'));
 check('the table says how many there are', table.includes('3 tradelines'));
-const empty = render(<TradelinesTable issuer="citi" rows={[]} today={TODAY} />);
+const empty = render(<TradelinesTable issuer="citi" rows={[]} today={TODAY} canEdit />);
 check('an empty table says so, and for which issuer', empty.includes('No tradelines') && empty.includes('Citi Tradeline'));
 check('and still offers to add some', empty.includes('Paste rows') && empty.includes('Add tradeline'));
+
+console.log('- the table as an affiliate on tradelines sees it -');
+const viewing = render(<TradelinesTable issuer="capital-one" rows={rows} today={TODAY} />);
+check('every tradeline is there', viewing.includes('Capital One/Cabelas') && viewing.includes('Capital One Walmart') && viewing.includes('3 tradelines'));
+check('with its price, which is what they quote', viewing.includes('$450.00') && viewing.includes('$1,250.50'));
+check('no row can be edited or deleted', !viewing.includes('>Edit<') && !viewing.includes('>Delete<'));
+check('none can be added or pasted in', !viewing.includes('Add tradeline') && !viewing.includes('Paste rows'));
+check('and no dialog for either is on the page', !viewing.includes('dialog'));
+check('it can still be sorted', viewing.includes('aria-sort'));
+const viewingEmpty = render(<TradelinesTable issuer="citi" rows={[]} today={TODAY} />);
+check('an empty table says so without offering to fill it', viewingEmpty.includes('No tradelines') && !viewingEmpty.includes('Paste') && !viewingEmpty.includes('add one'));
+const viewingAll = render(<TradelinesBrowser all={rows} initialIssuer="capital-one" today={TODAY} />);
+check('the whole page is view only unless it is said otherwise', !viewingAll.includes('Add tradeline') && !viewingAll.includes('>Edit<'));
+
+console.log('- an affiliate\'s tradelines dashboard -');
+const NONE = { income: 0, pendingPayout: 0, checkouts: 0 };
+const panel = render(<TradelinesSummaryPanel tradelineRef="TL-48213" summary={NONE} />);
+check('their link is said to be coming, not made up', panel.includes('Your link') && panel.includes('Coming soon') && !panel.includes('http'));
+check('their reference number is shown', panel.includes('TL-48213'));
+check('and can be copied', panel.includes('Copy your reference number'));
+check('income is shown', panel.includes('Income') && panel.includes('$0.00'));
+check('and pending payout', panel.includes('Pending payout') && panel.split('$0.00').length === 3);
+check('view all goes to the dashboard', /href="\/tradelines\/dashboard"[^>]*>[^<]*View all/.test(panel), panel);
+const noRef = render(<TradelinesSummaryPanel tradelineRef="" summary={NONE} />);
+check('somebody without a number yet is shown none', !noRef.includes('TL-') && !noRef.includes('Copy'));
+check('and still their link and figures', noRef.includes('Coming soon') && noRef.includes('Income') && noRef.includes('Pending payout'));
+const earned = render(<TradelineFigures summary={{ income: 1250.5, pendingPayout: 450, checkouts: 3 }} />);
+check('figures are to the cent', earned.includes('$1,250.50') && earned.includes('$450.00'));
+const list = render(<TradelineCheckouts summary={NONE} />);
+check('with no checkouts the list says so', list.includes('No checkouts yet') && list.includes('reference number'));
 
 console.log('- what a paste will do -');
 const good = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\t10.48493151\t$425\nCiti B\t$2,000\t20-Jan-16\n', TODAY)} />);

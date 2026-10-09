@@ -10,8 +10,11 @@
 import { cache } from 'react';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { canOpenService, homeFor } from './access';
 import { authConfigured, readSessionToken, SESSION_COOKIE } from './auth';
 import { resolveViewAs, VIEW_AS_COOKIE } from './impersonation';
+import { DEFAULT_SERVICES, type Service } from './services';
+import { readUserServices } from './users';
 import { openViewer, readBasic, resolveSession, type Viewer } from './viewer-core';
 
 export type { Viewer } from './viewer-core';
@@ -63,7 +66,38 @@ export async function requireViewer(): Promise<Viewer> {
  */
 export async function requireAdmin(): Promise<Viewer> {
   const viewer = await requireViewer();
-  if (viewer.role !== 'admin') redirect('/');
+  if (viewer.role !== 'admin') redirect(homeFor(viewer.role, await viewerServices()));
+  return viewer;
+}
+
+/**
+ * What the viewer is onboarded for. Memoised for the request, like the viewer:
+ * the layout asks for its tabs and the page asks again for its door.
+ *
+ * Nothing for an admin, who is onboarded for nothing and opens everything.
+ * Personal cards for an affiliate whose services cannot be read, which is what
+ * readUserServices says too, so a failed read never opens tradelines.
+ */
+export const viewerServices = cache(async (): Promise<readonly Service[]> => {
+  const viewer = await currentViewer();
+  if (!viewer || viewer.role === 'admin') return [];
+  if (!viewer.id) return DEFAULT_SERVICES;
+  return readUserServices(viewer.id).catch(() => DEFAULT_SERVICES);
+});
+
+/**
+ * For a page that belongs to one service: the card pages, or tradelines.
+ *
+ * An admin opens it. An affiliate opens it only if they are onboarded for
+ * that service (see lib/access), and is otherwise sent to where they start,
+ * for the reason requireAdmin sends them home: the page is not in their
+ * navigation, so they are here by a bookmark or a typed address.
+ */
+export async function requireService(service: Service): Promise<Viewer> {
+  const viewer = await requireViewer();
+  if (viewer.role === 'admin') return viewer;
+  const services = await viewerServices();
+  if (!canOpenService(viewer.role, services, service)) redirect(homeFor(viewer.role, services));
   return viewer;
 }
 

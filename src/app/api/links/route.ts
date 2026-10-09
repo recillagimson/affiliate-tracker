@@ -1,12 +1,27 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
+import { canOpenService } from '@/lib/access';
 import { ownerForNewLink, scopeData, type SelfAccount } from '@/lib/scope';
+import { DEFAULT_SERVICES } from '@/lib/services';
 import { getStore, statusForError } from '@/lib/store';
-import { findUserById, usersEnabled } from '@/lib/users';
+import { findUserById, readUserServices, usersEnabled } from '@/lib/users';
 import { fieldErrors, linkInputSchema } from '@/lib/validate';
 import { forbidden, unauthorized, viewerFromRequest, type Viewer } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
+
+const NOT_ON_CARDS = 'Links are for affiliates onboarded for Personal Cards.';
+
+/**
+ * Whether the caller may use the card pages at all (see lib/access). The pages
+ * send a tradelines-only affiliate away; this is the same rule for a request
+ * made without the page. Personal cards when their services cannot be read.
+ */
+async function mayUseCards(viewer: Viewer): Promise<boolean> {
+  if (viewer.role === 'admin') return true;
+  const services = viewer.id ? await readUserServices(viewer.id).catch(() => DEFAULT_SERVICES) : DEFAULT_SERVICES;
+  return canOpenService(viewer.role, services, 'personal_cards');
+}
 
 /**
  * Every handler resolves the viewer itself rather than trusting the middleware.
@@ -17,6 +32,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const viewer = await viewerFromRequest(request);
   if (!viewer) return unauthorized();
+  if (!(await mayUseCards(viewer))) return forbidden(NOT_ON_CARDS);
 
   try {
     const links = await getStore().listLinks();
@@ -57,6 +73,7 @@ async function selfAccount(viewer: Viewer): Promise<SelfAccount | null> {
 export async function POST(request: Request) {
   const viewer = await viewerFromRequest(request);
   if (!viewer) return unauthorized();
+  if (!(await mayUseCards(viewer))) return forbidden(NOT_ON_CARDS);
 
   let body: unknown;
   try {

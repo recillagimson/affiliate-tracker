@@ -12,6 +12,7 @@ import { stepsFor } from '@/lib/onboarding';
 import { requireOnboarded } from '@/lib/onboarding-guard';
 import { sideFor } from '@/lib/support';
 import { countUnreadSupport, supportEnabled } from '@/lib/support-store';
+import { viewerServices } from '@/lib/viewer';
 import type { Viewer } from '@/lib/viewer-core';
 // import { currentAnnouncement } from '@/lib/updates';
 // import { loginStamp } from '@/lib/viewer';
@@ -67,6 +68,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const { viewer, state, applies, bypass } = await requireOnboarded();
   const isAdmin = viewer.role === 'admin';
   const supportUnread = await supportUnreadFor(viewer);
+  // Which of the card tabs and the tradelines tab an affiliate has.
+  const services = await viewerServices();
   // The one step that nags instead of barring. §2 of the agreement makes a
   // payment impossible without it, so it is worth a standing line — but there
   // are two weeks of Net-15 slack to produce it in, so it is not worth a wall.
@@ -149,7 +152,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
 
         <div className="border-b border-edge bg-panel px-5 sm:px-7">
-          <Nav isAdmin={isAdmin} supportUnread={supportUnread} />
+          <Nav isAdmin={isAdmin} services={services} supportUnread={supportUnread} />
         </div>
       </header>
 
@@ -193,7 +196,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       {/* {announcement ? <UpdateNotice update={announcement} login={login} /> : null} */}
 
       <div className="no-print">
-        <MobileTabs isAdmin={isAdmin} supportUnread={supportUnread} />
+        <MobileTabs isAdmin={isAdmin} services={services} supportUnread={supportUnread} />
       </div>
     </div>
   );

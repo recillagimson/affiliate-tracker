@@ -9,7 +9,7 @@ import { cardsBelowFloor, ratesAboveFloor, ratesForViewer } from '@/lib/cpa';
 import { currentShare, defaultSettings, formatShare, type Settings } from '@/lib/settings';
 import { getStore } from '@/lib/store';
 import { listNoShareKeys } from '@/lib/users';
-import { requireViewer } from '@/lib/viewer';
+import { requireService } from '@/lib/viewer';
 import type { CpaReport } from '@/lib/types';
 
 /**
@@ -26,7 +26,8 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Commission per Approvals Reports' };
 
 export default async function CpaPage() {
-  const viewer = await requireViewer();
+  // A card page: an affiliate on tradelines alone is sent to theirs.
+  const viewer = await requireService('personal_cards');
   const isAdmin = viewer.role === 'admin';
 
   let report: CpaReport | null = null;

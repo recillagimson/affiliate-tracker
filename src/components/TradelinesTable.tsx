@@ -147,10 +147,13 @@ export function TradelinesBrowser({
   all,
   initialIssuer,
   today,
+  canEdit = false,
 }: {
   all: Tradeline[];
   initialIssuer: IssuerKey;
   today: string;
+  /** Whether the viewer keeps the table (an admin) or only reads it. */
+  canEdit?: boolean;
 }) {
   const [issuer, setIssuer] = useState<IssuerKey>(initialIssuer);
   const counts = useMemo(() => countByIssuer(all), [all]);
@@ -164,7 +167,7 @@ export function TradelinesBrowser({
     <>
       <IssuerTabs current={issuer} counts={counts} onChoose={choose} />
       {/* Remounted per issuer, so a sort or an open dialog does not carry from one table to the next. */}
-      <TradelinesTable key={issuer} issuer={issuer} rows={pickIssuer(all, issuer)} today={today} />
+      <TradelinesTable key={issuer} issuer={issuer} rows={pickIssuer(all, issuer)} today={today} canEdit={canEdit} />
     </>
   );
 }
@@ -223,8 +226,22 @@ type Editing = { mode: 'add' } | { mode: 'edit'; row: Tradeline } | null;
  * Rows start in the order they were entered, which is the order of the sheet
  * they came from. A heading sorts by its column, and pressing it again turns
  * the sort round.
+ *
+ * Only an admin changes it. Unless canEdit is said, nothing that adds, edits,
+ * deletes or pastes is drawn, which is how an affiliate on tradelines sees it.
+ * That is presentation: the route refuses them whatever the page shows.
  */
-export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; rows: Tradeline[]; today: string }) {
+export function TradelinesTable({
+  issuer,
+  rows,
+  today,
+  canEdit = false,
+}: {
+  issuer: IssuerKey;
+  rows: Tradeline[];
+  today: string;
+  canEdit?: boolean;
+}) {
   const router = useRouter();
   const [sort, setSort] = useState<{ key: TradelineSort; direction: 'asc' | 'desc' }>({ key: 'entered', direction: 'asc' });
   const [editing, setEditing] = useState<Editing>(null);
@@ -267,14 +284,16 @@ export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; ro
             {rows.length === 1 ? '1 tradeline' : `${rows.length} tradelines`}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2.5">
-          <button type="button" className="btn-outline" aria-haspopup="dialog" onClick={() => setPasting(true)}>
-            Paste rows
-          </button>
-          <button type="button" className="btn-gold" aria-haspopup="dialog" onClick={() => setEditing({ mode: 'add' })}>
-            + Add tradeline
-          </button>
-        </div>
+        {canEdit ? (
+          <div className="flex flex-wrap gap-2.5">
+            <button type="button" className="btn-outline" aria-haspopup="dialog" onClick={() => setPasting(true)}>
+              Paste rows
+            </button>
+            <button type="button" className="btn-gold" aria-haspopup="dialog" onClick={() => setEditing({ mode: 'add' })}>
+              + Add tradeline
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {error ? (
@@ -285,7 +304,9 @@ export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; ro
 
       {rows.length === 0 ? (
         <p className="px-5 py-14 text-center text-[13px] text-ink-soft">
-          No tradelines for {label} yet. Paste them in from a spreadsheet, or add one at a time.
+          {canEdit
+            ? `No tradelines for ${label} yet. Paste them in from a spreadsheet, or add one at a time.`
+            : `No tradelines for ${label} yet.`}
         </p>
       ) : (
         <TableScroller label={`${label} tradelines`}>
@@ -315,9 +336,11 @@ export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; ro
                     </th>
                   );
                 })}
-                <th scope="col" className="border-b border-edge px-5 py-2.5">
-                  <span className="sr-only">Actions</span>
-                </th>
+                {canEdit ? (
+                  <th scope="col" className="border-b border-edge px-5 py-2.5">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -330,27 +353,29 @@ export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; ro
                   </td>
                   <td className="tnum px-5 py-3 text-right text-[13px] text-ink">{formatAge(row.age)}</td>
                   <td className="tnum px-5 py-3 text-right text-[13px] font-medium text-ink">{formatPrice(row.userPrice)}</td>
-                  <td className="whitespace-nowrap px-5 py-2 text-right">
-                    <span className="inline-flex justify-end gap-1.5">
-                      <button
-                        type="button"
-                        className="btn-quiet btn-sm"
-                        disabled={busyId === row.id}
-                        onClick={() => setEditing({ mode: 'edit', row })}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-danger btn-sm"
-                        disabled={busyId === row.id}
-                        aria-busy={busyId === row.id}
-                        onClick={() => remove(row)}
-                      >
-                        Delete
-                      </button>
-                    </span>
-                  </td>
+                  {canEdit ? (
+                    <td className="whitespace-nowrap px-5 py-2 text-right">
+                      <span className="inline-flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          className="btn-quiet btn-sm"
+                          disabled={busyId === row.id}
+                          onClick={() => setEditing({ mode: 'edit', row })}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger btn-sm"
+                          disabled={busyId === row.id}
+                          aria-busy={busyId === row.id}
+                          onClick={() => remove(row)}
+                        >
+                          Delete
+                        </button>
+                      </span>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -358,29 +383,33 @@ export function TradelinesTable({ issuer, rows, today }: { issuer: IssuerKey; ro
         </TableScroller>
       )}
 
-      {/* Keyed by what is being edited, so each opening starts from that row's own values. */}
-      <TradelineForm
-        key={editing ? (editing.mode === 'edit' ? `edit-${editing.row.id}` : 'add') : 'closed'}
-        issuer={issuer}
-        editing={editing}
-        today={today}
-        onClose={() => setEditing(null)}
-        onSaved={() => {
-          setEditing(null);
-          router.refresh();
-        }}
-      />
-      <PasteDialog
-        open={pasting}
-        issuer={issuer}
-        existing={rows.length}
-        today={today}
-        onClose={() => setPasting(false)}
-        onSaved={() => {
-          setPasting(false);
-          router.refresh();
-        }}
-      />
+      {canEdit ? (
+          <>
+        {/* Keyed by what is being edited, so each opening starts from that row's own values. */}
+        <TradelineForm
+          key={editing ? (editing.mode === 'edit' ? `edit-${editing.row.id}` : 'add') : 'closed'}
+          issuer={issuer}
+          editing={editing}
+          today={today}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            router.refresh();
+          }}
+        />
+        <PasteDialog
+          open={pasting}
+          issuer={issuer}
+          existing={rows.length}
+          today={today}
+          onClose={() => setPasting(false)}
+          onSaved={() => {
+            setPasting(false);
+            router.refresh();
+          }}
+        />
+          </>
+      ) : null}
     </section>
   );
 }

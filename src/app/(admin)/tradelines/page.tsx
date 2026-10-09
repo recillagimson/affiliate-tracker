@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { TradelinesBrowser } from '@/components/TradelinesTable';
+import { TradelinesSummaryPanel } from '@/components/TradelinesSummary';
 import { issuerFrom, type Tradeline } from '@/lib/tradelines';
+import { tradelineSummaryFor } from '@/lib/tradeline-sales';
 import { listTradelines, tradelinesEnabled } from '@/lib/tradelines-store';
-import { requireAdmin } from '@/lib/viewer';
+import { readUserTradelineRef } from '@/lib/users';
+import { requireService } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,12 +24,15 @@ type PageProps = {
  * credit limit, the day it was opened and its age, the last shown exactly as
  * it was pasted or typed.
  *
- * Admins only, for now. It is being loaded, and affiliates on the Tradelines
- * service are to be shown it later. requireAdmin sends anybody else home, and
- * the route behind the page's buttons refuses them separately.
+ * An admin keeps it. An affiliate onboarded for tradelines reads it, prices
+ * included, because that is what they quote, and can change none of it.
+ * requireService sends anybody else home. The buttons that change the table
+ * are only drawn for an admin, and the route behind them refuses everybody
+ * else separately.
  */
 export default async function TradelinesPage({ searchParams }: PageProps) {
-  await requireAdmin();
+  const viewer = await requireService('tradelines');
+  const canEdit = viewer.role === 'admin';
 
   if (!tradelinesEnabled()) {
     return (
@@ -60,6 +66,15 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
   // first paint and the browser agree on it. No age is worked out from it.
   const today = new Date().toISOString().slice(0, 10);
 
+  // An affiliate's own link and figures, above the tables. Not for an admin,
+  // who keeps the table and has no reference number of their own.
+  const mine =
+    viewer.role === 'affiliate' && viewer.id
+      ? await readUserTradelineRef(viewer.id)
+          .catch(() => '')
+          .then(async (tradelineRef) => ({ tradelineRef, summary: await tradelineSummaryFor(tradelineRef) }))
+      : null;
+
   return (
     <div className="w-full">
       <div className="rise">
@@ -70,8 +85,10 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
         </p>
       </div>
 
+      {mine ? <TradelinesSummaryPanel tradelineRef={mine.tradelineRef} summary={mine.summary} /> : null}
+
       {/* Every issuer's rows at once, so choosing one is instant. Which opens first comes from the address. */}
-      <TradelinesBrowser all={all} initialIssuer={issuer} today={today} />
+      <TradelinesBrowser all={all} initialIssuer={issuer} today={today} canEdit={canEdit} />
     </div>
   );
 }

@@ -29,7 +29,7 @@ import { approvedCards, approvedLeadIds, cardForLead } from '@/lib/qmp-sync';
 import { ownsKey } from '@/lib/scope';
 import { normalizeKey } from '@/lib/validate';
 import { loadApproveContext } from '@/lib/approve-context';
-import { requireViewer } from '@/lib/viewer';
+import { requireService } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,7 +79,8 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   const usr = decodeUsr(rawUsr);
   const personKey = usr || HOUSE_KEY;
 
-  const viewer = await requireViewer();
+  // A card page: an affiliate on tradelines alone is sent to theirs.
+  const viewer = await requireService('personal_cards');
   const isAdmin = viewer.role === 'admin';
 
   // An affiliate asking for anybody else's page gets the same 404 as a key that
