@@ -70,6 +70,20 @@ export function ServiceChips({ services }: { services: readonly Service[] }) {
 }
 
 /**
+ * Somebody's tradelines reference number, to read and never to change: the
+ * database gives it out (see lib/tradeline-ref). Nothing at all for somebody
+ * who has none.
+ */
+export function TradelineRef({ value }: { value: string | undefined }) {
+  if (!value) return null;
+  return (
+    <span className="tnum text-[12px] text-ink-dim" title="Tradelines reference number">
+      {value}
+    </span>
+  );
+}
+
+/**
  * Changing what somebody is onboarded for, from their page.
  *
  * Nothing is saved until Save, the way the role beside it works, and for the

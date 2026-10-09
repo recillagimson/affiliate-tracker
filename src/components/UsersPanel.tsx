@@ -15,7 +15,7 @@ import { PERSON_ROLES, personRole, ROLE_LABELS, type PersonRole } from '@/lib/ro
 import { DEFAULT_SERVICES, servicesProblem, type Service } from '@/lib/services';
 import { Modal } from '@/components/Modal';
 import { PersonDialog } from '@/components/PersonDialog';
-import { ServiceBoxes, ServiceChips } from '@/components/ServicesSelect';
+import { ServiceBoxes, ServiceChips, TradelineRef } from '@/components/ServicesSelect';
 
 export type AccountRow = {
   id: string;
@@ -25,6 +25,8 @@ export type AccountRow = {
   lgfEmployee?: boolean;
   /** What they are onboarded for. Absent for an admin, who is not. */
   services?: Service[];
+  /** Their tradelines reference number. Absent for somebody never on tradelines. */
+  tradelineRef?: string;
   usr: string;
   fullName: string;
   email: string;
@@ -843,6 +845,7 @@ export function UsersPanel({
                           {row.role === 'affiliate' && row.services ? (
                             <ServiceChips services={row.services} />
                           ) : null}
+                          <TradelineRef value={row.tradelineRef} />
                           {/* Disabled is the state worth interrupting for: the
                               account is still listed and still cannot sign in. */}
                           {row.active ? null : (

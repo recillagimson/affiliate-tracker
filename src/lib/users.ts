@@ -22,6 +22,7 @@ import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './stor
 import { getSupabaseClient, isSupabaseConfigured } from './store/supabase';
 import { accessRole, type PersonRole } from './roles';
 import { normalizeServices, type Service } from './services';
+import { readTradelineRef } from './tradeline-ref';
 import { newTrackingKey } from './tracking-key';
 
 /** What the UI is allowed to see. The hash never leaves this module. */
@@ -579,6 +580,35 @@ export async function setUserServices(id: string, services: readonly Service[]):
   }
   if (!data) throw new StoreNotFoundError('That account no longer exists.');
   return next;
+}
+
+/*
+ * The tradelines reference number (see lib/tradeline-ref). Read on its own for
+ * the same reason services are: a database that has not had migration
+ * 20261013120000 yet then reads as nobody having one, and every page still
+ * works. Never written from here. The database gives one out when tradelines
+ * is added, and keeps it.
+ */
+
+/** Everybody's tradelines reference number, by account id. Only those who have one. */
+export async function listUserTradelineRefs(): Promise<Map<string, string>> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient().from('users').select('id, tradeline_ref');
+  const out = new Map<string, string>();
+  if (error) return out;
+  for (const row of (data ?? []) as { id: string; tradeline_ref?: unknown }[]) {
+    const ref = readTradelineRef(row.tradeline_ref);
+    if (ref) out.set(String(row.id), ref);
+  }
+  return out;
+}
+
+/** One person's tradelines reference number, or '' if they have none or it cannot be read. */
+export async function readUserTradelineRef(id: string): Promise<string> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient().from('users').select('tradeline_ref').eq('id', id).maybeSingle();
+  if (error) return '';
+  return readTradelineRef((data as { tradeline_ref?: unknown } | null)?.tradeline_ref);
 }
 
 /**

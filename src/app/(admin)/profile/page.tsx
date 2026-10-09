@@ -8,7 +8,7 @@ import { canOpen, isLocked, stepsFor, waivedSteps, type Step, type StepKey } fro
 import { onboardingFor } from '@/lib/onboarding-guard';
 import { readAgreement, readBank, readW9 } from '@/lib/onboarding-store';
 import { ServiceChips } from '@/components/ServicesSelect';
-import { findUserById, readUserServices } from '@/lib/users';
+import { findUserById, readUserServices, readUserTradelineRef } from '@/lib/users';
 import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -48,10 +48,12 @@ export default async function ProfilePage() {
     w9: `/api/onboarding/${encodeURIComponent(viewer.id)}/w9.pdf`,
   };
 
-  const [account, services, agreement, w9, bank] = await Promise.all([
+  const [account, services, tradelineRef, agreement, w9, bank] = await Promise.all([
     findUserById(viewer.id).catch(() => null),
     // What they are onboarded for, to read and not to change: an admin sets it.
     viewer.role === 'affiliate' && viewer.id ? readUserServices(viewer.id).catch(() => null) : null,
+    // Their tradelines reference number, if they have one.
+    viewer.role === 'affiliate' && viewer.id ? readUserTradelineRef(viewer.id).catch(() => '') : '',
     applies ? readAgreement(viewer.id).catch(() => null) : null,
     applies ? readW9(viewer.id).catch(() => null) : null,
     applies ? readBank(viewer.id).catch(() => null) : null,
@@ -156,6 +158,12 @@ export default async function ProfilePage() {
           <p className="mt-3 flex flex-wrap items-center gap-2.5 text-[13px] text-ink-soft">
             <span>Your services</span>
             <ServiceChips services={services} />
+          </p>
+        ) : null}
+        {tradelineRef ? (
+          <p className="mt-2 text-[13px] text-ink-soft">
+            Your tradelines reference number{' '}
+            <span className="tnum font-medium text-ink">{tradelineRef}</span>
           </p>
         ) : null}
       </div>

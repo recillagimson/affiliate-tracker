@@ -198,6 +198,12 @@ export function PersonDialog({
             <span className="tnum">usr={row.usr}</span>
           </>
         ) : null}
+        {row.tradelineRef ? (
+          <>
+            {' · '}
+            <span className="tnum">Tradelines ref {row.tradelineRef}</span>
+          </>
+        ) : null}
         {' · '}
         {signedIn ? `Last signed in ${signedIn}` : 'Never signed in'}
         {created ? ` · Added ${created}${row.createdBy ? ` by ${row.createdBy}` : ''}` : ''}

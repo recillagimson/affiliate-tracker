@@ -17,7 +17,7 @@ import { readSmsSettings, recentTexts } from '@/lib/sms-store';
 import { RoleSelect } from '@/components/RoleSelect';
 import { ServicesSelect } from '@/components/ServicesSelect';
 import { personRole } from '@/lib/roles';
-import { findUserById, isLgfEmployee, readUserServices, usersEnabled } from '@/lib/users';
+import { findUserById, isLgfEmployee, readUserServices, readUserTradelineRef, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -63,6 +63,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const lgfEmployee = account.role === 'affiliate' && (await isLgfEmployee(id).catch(() => false));
   // Null for an admin, who is not onboarded for anything.
   const services = account.role === 'affiliate' ? await readUserServices(id).catch(() => null) : null;
+  const tradelineRef = services ? await readUserTradelineRef(id).catch(() => '') : '';
   const state = progress?.state ?? null;
   const approval = progress?.approval ?? { ...UNREVIEWED };
   const bypass = progress?.bypass ?? { ...NO_BYPASS };
@@ -134,6 +135,12 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               current={services}
             />
           </div>
+          {tradelineRef ? (
+            <p className="plain mt-4">
+              Tradelines reference number <span className="tnum font-medium text-ink">{tradelineRef}</span>.
+              It is theirs for good and is how a tradeline sale is traced back to them.
+            </p>
+          ) : null}
         </section>
       ) : null}
 

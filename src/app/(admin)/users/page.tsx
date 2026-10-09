@@ -6,7 +6,7 @@ import { NO_BYPASS, UNREVIEWED } from '@/lib/approval';
 import { NOTHING_DONE } from '@/lib/onboarding';
 import { listOnboarding } from '@/lib/onboarding-store';
 import { normalizeServices } from '@/lib/services';
-import { listLgfEmployeeIds, listUserServices, listUsers, usersEnabled } from '@/lib/users';
+import { listLgfEmployeeIds, listUserServices, listUserTradelineRefs, listUsers, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -82,6 +82,10 @@ export default async function UsersPage() {
   // and then everybody shows as personal cards, which is the default.
   const services = await listUserServices().catch(() => new Map());
 
+  // Who has a tradelines reference number. Empty when it cannot be read, and
+  // then nobody is shown one.
+  const tradelineRefs = await listUserTradelineRefs().catch(() => new Map<string, string>());
+
   let rows: AccountRow[];
   try {
     rows = (await listUsers()).map((user) => ({
@@ -90,6 +94,7 @@ export default async function UsersPage() {
       role: user.role,
       lgfEmployee: user.role === 'affiliate' && lgfEmployees.has(user.id),
       services: user.role === 'affiliate' ? normalizeServices(services.get(user.id)) : undefined,
+      tradelineRef: tradelineRefs.get(user.id),
       usr: user.usr,
       fullName: user.fullName,
       email: user.email,
