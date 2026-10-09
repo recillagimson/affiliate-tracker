@@ -105,14 +105,14 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T000/B000/xxxxxxxx
 ```
 
 Affiliates and LGF employees can have a channel each. Add a second webhook from the same
-app (*Add New Webhook to Workspace* again, choosing the affiliates' channel) and set:
+app (*Add New Webhook to Workspace* again, choosing the employees' channel) and set:
 
 ```bash
-SLACK_WEBHOOK_URL_AFFILIATE=https://hooks.slack.com/services/T000/B111/yyyyyyyy
+SLACK_WEBHOOK_URL_LGF_EMPLOYEE=https://hooks.slack.com/services/T000/B111/yyyyyyyy
 ```
 
-Approvals on an affiliate's link then go there, and approvals on an LGF - Employee's (or an
-admin's) link stay in the `SLACK_WEBHOOK_URL` channel, along with support tickets. The
+Approvals on an LGF - Employee's (or an admin's) link then go there, and approvals on an
+affiliate's link stay in the `SLACK_WEBHOOK_URL` channel, along with support tickets. The
 wording is the same in both. Left unset, everything goes to the one channel. A sync gives
 each channel its own approvals and its own summary.
 

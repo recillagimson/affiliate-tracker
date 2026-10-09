@@ -24,35 +24,34 @@ const TIMEOUT_MS = 10_000;
 /**
  * Which channel a message is for.
  *
- * 'default' is the first channel this app ever posted to: LGF employees'
- * approvals, support tickets, and everything else. 'affiliate' is the channel
- * for approvals on an affiliate's link, which has a webhook of its own.
+ * 'default' is the first channel this app ever posted to: affiliates'
+ * approvals, support tickets, and everything else. 'employee' is the channel
+ * for approvals on an LGF employee's link, which has a webhook of its own.
  */
-export type SlackChannel = 'default' | 'affiliate';
+export type SlackChannel = 'default' | 'employee';
 
 /**
- * The webhook for a channel. The affiliate channel falls back to the first one
+ * The webhook for a channel. The employee channel falls back to the first one
  * when it has no webhook of its own, so an install with one channel behaves as
  * it did before there were two.
  */
 function webhookUrl(channel: SlackChannel = 'default'): string {
   const main = (process.env.SLACK_WEBHOOK_URL ?? '').trim();
   if (channel === 'default') return main;
-  return (process.env.SLACK_WEBHOOK_URL_AFFILIATE ?? '').trim() || main;
+  return (process.env.SLACK_WEBHOOK_URL_LGF_EMPLOYEE ?? '').trim() || main;
 }
 
 /**
  * Where an approval on this tracking key is announced.
  *
  * `noShare` is lib/users listNoShareKeys: the keys of LGF employees (and
- * admins), whose approvals stay in the first channel. Every other key is an
- * affiliate's. Null is a list that could not be read, and that stays in the
- * first channel too: it is where every approval went before, and a failed read
- * is no reason to guess at somebody's role.
+ * admins), whose approvals go to the employee channel. Every other key is an
+ * affiliate's and stays in the first one. Null is a list that could not be
+ * read, and that stays in the first channel too: it is where every approval
+ * went before, and a failed read is no reason to guess at somebody's role.
  */
 export function approvalChannel(usr: string, noShare: Set<string> | null): SlackChannel {
-  if (!noShare || noShare.has(usr)) return 'default';
-  return 'affiliate';
+  return noShare?.has(usr) ? 'employee' : 'default';
 }
 
 /**
@@ -150,7 +149,7 @@ export async function announceSync(
   leadsMarked: number,
 ): Promise<string> {
   const groups = new Map<string, { channel: SlackChannel; approvals: ApprovalAnnouncement[] }>();
-  for (const channel of ['default', 'affiliate'] as const) {
+  for (const channel of ['default', 'employee'] as const) {
     if (!slackConfigured(channel)) continue;
     const mine = approvals.filter((approval) => approval.channel === channel);
     if (mine.length === 0) continue;
