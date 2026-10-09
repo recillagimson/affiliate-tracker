@@ -11,7 +11,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isTradelineRef, readTradelineRef, TRADELINE_REF_PATTERN } from '../src/lib/tradeline-ref';
+import { isTradelineRef, readTradelineRef, tradelineLinkFor, TRADELINE_REF_PATTERN } from '../src/lib/tradeline-ref';
 
 let pass = 0;
 let fail = 0;
@@ -41,6 +41,16 @@ check('a good one is kept as it is', readTradelineRef('TL-48213') === 'TL-48213'
 check('somebody with none reads as none', readTradelineRef(null) === '');
 check('a missing column reads as none', readTradelineRef(undefined) === '');
 check('something that is not a code reads as none', readTradelineRef('arthur-smith') === '' && readTradelineRef(7) === '');
+
+console.log('- the link an affiliate hands out -');
+const SITE = 'https://tradelines.example.com';
+check('is the storefront with their number on it', tradelineLinkFor(SITE, 'TL-48213') === 'https://tradelines.example.com/?ref=TL-48213');
+check('a trailing slash in the setting is not doubled', tradelineLinkFor(`${SITE}/`, 'TL-48213') === 'https://tradelines.example.com/?ref=TL-48213');
+check('padding round the setting is ignored', tradelineLinkFor(`  ${SITE} `, 'TL-48213') === 'https://tradelines.example.com/?ref=TL-48213');
+check('no storefront address, no link', tradelineLinkFor('', 'TL-48213') === '' && tradelineLinkFor(undefined, 'TL-48213') === '');
+check('no number, no link', tradelineLinkFor(SITE, '') === '');
+check('something that is not a number, no link', tradelineLinkFor(SITE, 'arthur-smith') === '');
+check('an address that is not a web address, no link', tradelineLinkFor('tradelines.example.com', 'TL-48213') === '' && tradelineLinkFor('javascript:alert(1)', 'TL-48213') === '');
 
 console.log('- the migration -');
 const MIGRATION = join(__dirname, '..', 'supabase', 'migrations', '20261013120000_tradeline_ref.sql');

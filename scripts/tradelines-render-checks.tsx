@@ -141,6 +141,12 @@ check('view all goes to the dashboard', /href="\/tradelines\/dashboard"[^>]*>[^<
 const noRef = render(<TradelinesSummaryPanel tradelineRef="" summary={NONE} />);
 check('somebody without a number yet is shown none', !noRef.includes('TL-') && !noRef.includes('Copy'));
 check('and still their link and figures', noRef.includes('Coming soon') && noRef.includes('Income') && noRef.includes('Pending payout'));
+const linked = render(
+  <TradelinesSummaryPanel tradelineRef="TL-48213" link="https://tradelines.example.com/?ref=TL-48213" summary={NONE} />,
+);
+check('with a storefront, their link is shown whole', linked.includes('https://tradelines.example.com/?ref=TL-48213') && !linked.includes('Coming soon'));
+check('and is what gets copied', linked.includes('Copy your link'));
+check('their number is still said', linked.includes('TL-48213'));
 const earned = render(<TradelineFigures summary={{ income: 1250.5, pendingPayout: 450, checkouts: 3 }} />);
 check('figures are to the cent', earned.includes('$1,250.50') && earned.includes('$450.00'));
 const list = render(<TradelineCheckouts summary={NONE} />);

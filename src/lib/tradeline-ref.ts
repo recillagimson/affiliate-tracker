@@ -36,3 +36,17 @@ export function isTradelineRef(value: unknown): value is string {
 export function readTradelineRef(value: unknown): string {
   return isTradelineRef(value) ? value : '';
 }
+
+/**
+ * The link an affiliate hands to a customer: the storefront, with their
+ * reference number on it.
+ *
+ * '' when there is no storefront address yet (TRADELINES_SITE_URL is unset),
+ * when they have no number, or when either is not what it should be. The
+ * page then says the link is coming rather than showing one that goes nowhere.
+ */
+export function tradelineLinkFor(siteUrl: string | undefined, ref: string): string {
+  const site = (siteUrl ?? '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\/[^\s/]+/.test(site) || !isTradelineRef(ref)) return '';
+  return `${site}/?ref=${ref}`;
+}

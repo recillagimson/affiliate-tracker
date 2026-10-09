@@ -52,16 +52,19 @@ function Figure({
  * What an affiliate on tradelines sees above the tables: their link, their
  * figures, and the way to every checkout.
  *
- * The link is a placeholder. There is no tradelines checkout yet for it to
- * point at, so it says so rather than showing an address that goes nowhere.
- * Their reference number is real and is shown, because it is what the link
- * will carry; somebody the database has not given one to yet is shown none.
+ * The link is their storefront link once the storefront has an address
+ * (lib/tradeline-ref, tradelineLinkFor). Until then it says it is coming
+ * rather than showing an address that goes nowhere. Their reference number is
+ * shown either way; somebody the database has not given one to is shown none.
  */
 export function TradelinesSummaryPanel({
   tradelineRef,
+  link = '',
   summary,
 }: {
   tradelineRef: string;
+  /** Their storefront link, or '' while the storefront has no address. */
+  link?: string;
   summary: TradelineSummary;
 }) {
   return (
@@ -69,9 +72,18 @@ export function TradelinesSummaryPanel({
       <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3 border-b border-edge px-5 py-4">
         <div className="min-w-0">
           <h2 className="label-cap text-[10px]">Your link</h2>
-          <p className="mt-1.5 text-[14px] font-medium text-ink">Coming soon</p>
+          {link ? (
+            <p className="tnum mt-1.5 break-all text-[14px] font-medium text-ink">{link}</p>
+          ) : (
+            <p className="mt-1.5 text-[14px] font-medium text-ink">Coming soon</p>
+          )}
           <p className="mt-1 text-[12px] text-ink-dim">
-            {tradelineRef ? (
+            {link ? (
+              <>
+                Send this to a customer. What they buy through it is yours, under reference number{' '}
+                <span className="tnum font-medium text-ink">{tradelineRef}</span>.
+              </>
+            ) : tradelineRef ? (
               <>
                 Your checkout link is on its way. It will carry your reference number,{' '}
                 <span className="tnum font-medium text-ink">{tradelineRef}</span>.
@@ -81,7 +93,9 @@ export function TradelinesSummaryPanel({
             )}
           </p>
         </div>
-        {tradelineRef ? (
+        {link ? (
+          <CopyButton value={link} label="Copy your link" idle="Copy link" />
+        ) : tradelineRef ? (
           <CopyButton value={tradelineRef} label="Copy your reference number" idle="Copy number" />
         ) : null}
       </div>

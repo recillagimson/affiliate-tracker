@@ -3,6 +3,7 @@ import { ErrorPanel } from '@/components/ErrorPanel';
 import { TradelinesBrowser } from '@/components/TradelinesTable';
 import { TradelinesSummaryPanel } from '@/components/TradelinesSummary';
 import { issuerFrom, type Tradeline } from '@/lib/tradelines';
+import { tradelineLinkFor } from '@/lib/tradeline-ref';
 import { tradelineSummaryFor } from '@/lib/tradeline-sales';
 import { listTradelines, tradelinesEnabled } from '@/lib/tradelines-store';
 import { readUserTradelineRef } from '@/lib/users';
@@ -85,7 +86,13 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
         </p>
       </div>
 
-      {mine ? <TradelinesSummaryPanel tradelineRef={mine.tradelineRef} summary={mine.summary} /> : null}
+      {mine ? (
+        <TradelinesSummaryPanel
+          tradelineRef={mine.tradelineRef}
+          link={tradelineLinkFor(process.env.TRADELINES_SITE_URL, mine.tradelineRef)}
+          summary={mine.summary}
+        />
+      ) : null}
 
       {/* Every issuer's rows at once, so choosing one is instant. Which opens first comes from the address. */}
       <TradelinesBrowser all={all} initialIssuer={issuer} today={today} canEdit={canEdit} />
