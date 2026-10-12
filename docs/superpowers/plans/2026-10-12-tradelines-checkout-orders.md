@@ -33,7 +33,7 @@
 
 ## Review Focus
 
-1. **A customer who presses Place order twice, or whose first request succeeded but whose connection dropped before the answer**: one order, not two, or at the least the page must not invite a second. Pinned in Task 8 (button disabled while sending; form kept on failure).
+1. **A customer who presses Place order twice, or whose first request succeeded but whose connection dropped before the answer**: one order, not two, or at the least the page must not invite a second. Pinned in Task 7 (a lost answer tells them to check their email before trying again, and never claims nothing was saved) and Task 8 (button disabled while sending; form kept on failure).
 2. **A cart that changed under the customer** (price edited or sheet re-pasted between adding and paying): the order is refused with what changed, never saved at a price they did not see, never a blank page. Pinned in Tasks 1 and 8.
 3. **Loosely typed personal details** (`(518) 555-0142`, `123 45 6789`, `ny`, a ZIP+4, a name with double spaces, an email in capitals): accepted and stored tidy. Pinned in Tasks 1 and 7.
 4. **An order placed with a reference number that is real but no longer earns** (affiliate disabled, taken off Tradelines, made an LGF employee, or an admin): the sale is still taken; nobody is credited or the commission is nought; nothing errors. Pinned in Task 4.
@@ -1900,8 +1900,7 @@ check('checkouts are the orders that were not cancelled', summary.checkouts === 
 
 console.log('- what their page is handed -');
 const rows = affiliateRows(all);
-check('every order is listed, newest first', rows.map((row) => row.orderNumber).join() === 'LGF-100002,LGF-100006,LGF-100001,LGF-100003,LGF-100005,LGF-100004' || rows.length === 6, rows.map((row) => row.orderNumber));
-check('in the order they were handed, which is newest first from the store', rows[0]?.orderNumber === 'LGF-100001' && rows.length === 6);
+check('every order is listed, in the order handed over, which is newest first from the store', rows.map((candidate) => candidate.orderNumber).join() === all.map((candidate) => candidate.orderNumber).join(), rows.map((candidate) => candidate.orderNumber));
 const row = rows.find((candidate) => candidate.orderNumber === 'LGF-100002');
 check('a row says what was bought', row?.items.map((line) => `${line.name} x${line.quantity}`).join() === 'Capital One/Cabelas x2,Capital One Walmart x1', row);
 check('and what it came to, where it stands, and what it earns', row?.total === 3300 && row?.status === 'paid' && row?.commission === 400);
@@ -1916,8 +1915,6 @@ check('no SSN digits, email, mobile or address are in what is handed over', !['6
 console.log(`\ntradeline-sales: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
 ```
-
-Note for the implementer: the two "every order is listed" checks together only require that `affiliateRows` keeps the order it is given and returns all six. The first is written loosely on purpose; do not reorder inside `affiliateRows`.
 
 Run: `npx tsx scripts/tradeline-sales-checks.ts`
 Expected: fails on the missing exports `affiliateRows`, `orderCommission`, `summarizeOrders`.
@@ -2574,7 +2571,7 @@ export function OrderSecrets({ orderNumber, ssnLast4 }: { orderNumber: string; s
   const [error, setError] = useState<string | null>(null);
 
   async function reveal() {
-    if (!confirm('Show this customer’s full SSN and date of birth? This is recorded with your name and the time.'.replace('’', "'"))) return;
+    if (!confirm("Show this customer's full SSN and date of birth? This is recorded with your name and the time.")) return;
     setBusy(true);
     setError(null);
     const result = await post({ action: 'reveal', orderNumber });
@@ -2663,7 +2660,7 @@ export function OrderActions({ orderNumber, status }: { orderNumber: string; sta
 }
 ```
 
-Before writing, grep `src/app/globals.css` for the class names used here that have not appeared earlier in this codebase's components (`field`, `field-label`, `field-error`, `bg-panel-soft`, `btn-gold`, `btn-danger`, `btn-outline`, `btn-quiet`, `btn-sm`, `chip-gold`, `chip-quiet`, `label-cap`, `tnum`). Use the name the stylesheet has for any that differ, and say which in the ledger. Simplify the `confirm(...)` in `reveal` to a plain string with a straight apostrophe: `"Show this customer's full SSN and date of birth? This is recorded with your name and the time."`
+Before writing, grep `src/app/globals.css` for the class names used here that have not appeared earlier in this codebase's components (`field`, `field-label`, `field-error`, `bg-panel-soft`, `btn-gold`, `btn-danger`, `btn-outline`, `btn-quiet`, `btn-sm`, `chip-gold`, `chip-quiet`, `label-cap`, `tnum`). Use the name the stylesheet has for any that differ, and say which in the ledger.
 
 Run: `npx tsx --tsconfig scripts/render.tsconfig.json scripts/tradeline-order-admin-checks.tsx`
 Expected: `tradeline-order-admin: <n> passed, 0 failed`
@@ -3086,6 +3083,9 @@ describe('placeOrder', () => {
     }) as unknown as typeof fetch;
     const result = await placeOrder('http://x', {}, down);
     expect(result.kind).toBe('error');
+    // The order may have been saved before the answer was lost.
+    expect(result.kind === 'error' && /check your email/i.test(result.message)).toBe(true);
+    expect(result.kind === 'error' && /nothing (has been|was) saved/i.test(result.message)).toBe(false);
   });
   it('an answer that is not JSON is a sentence too', async () => {
     const odd = (async () => ({ status: 502, json: async () => { throw new Error('html'); } })) as unknown as typeof fetch;
@@ -3296,7 +3296,7 @@ export type OrderResult =
   | { kind: 'total'; total: number; message: string }
   | { kind: 'error'; message: string };
 
-const FAILED = 'Your order did not go through. Nothing has been charged or saved. Try again, or call us.';
+const FAILED = 'Your order did not go through. Nothing has been charged. Try again, or call us.';
 
 /** The tracker's answer, as something the page can act on. Never throws. */
 export function readOrderAnswer(status: number, json: unknown): OrderResult {
@@ -3338,7 +3338,13 @@ export async function placeOrder(
       body: JSON.stringify(body),
     });
   } catch {
-    return { kind: 'error', message: 'We could not reach the server. Check your connection and try again. Nothing has been saved.' };
+    // The request may have arrived even though its answer did not, so this
+    // must not say nothing was saved, and must not send them straight back in.
+    return {
+      kind: 'error',
+      message:
+        'We could not confirm that your order went through. Check your email for a confirmation before trying again, or call us.',
+    };
   }
   const json: unknown = await response.json().catch(() => null);
   return readOrderAnswer(response.status, json);
@@ -4019,6 +4025,8 @@ Do not continue until they have answered.
 Signed in as an admin, `http://localhost:3001/tradelines/orders` shows "No orders yet" (not the migration sentence).
 
 - [ ] **Step 3: Place and work real orders, in the browser**
+
+The checkout allows five orders in ten minutes from one address, and locally every request shares one. If the limit is reached, restart the tracker's dev server, which clears it.
 
 At 1440px, then repeat the placing at 390px. Use only these details: name `Test Order DELETE ME`, email the address the owner named or `test-order@example.com`, mobile `518-555-0142`, date of birth `1990-04-10`, SSN `123-45-6789`, address `12 Sample Street`, `Albany`, `NY`, `12207`.
 

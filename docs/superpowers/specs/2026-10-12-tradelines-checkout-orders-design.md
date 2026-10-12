@@ -88,8 +88,9 @@ every other table: RLS on, no policies, revoked from `anon` and
 | `affiliate_user_id` | the affiliate credited, or null for a house sale. References `users(id)`; deleting a user with orders is refused. |
 | `total` | numeric(12,2), the sum of the line totals |
 
-Checks: the status and its timestamps agree (a paid order has `paid_at`, a
-cancelled one `cancelled_at`, neither both); `ssn_encrypted` and
+Checks: the status and its timestamps agree (an order awaiting payment has
+neither date, a paid one has `paid_at` and no `cancelled_at`, a cancelled one
+has `cancelled_at`, and keeps its `paid_at` as history if it had been paid); `ssn_encrypted` and
 `dob_encrypted` are not empty; `total` is greater than nought.
 
 ### `tradeline_order_items`
