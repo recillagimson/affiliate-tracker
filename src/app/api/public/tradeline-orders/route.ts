@@ -1,11 +1,11 @@
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { emailConfigured, sendEmail } from '@/lib/email';
 import { tradelineOrderEmail } from '@/lib/emails/tradeline-order';
 import { storeFailure } from '@/lib/payout-api';
 import { rateLimit } from '@/lib/ratelimit';
 import { clientIp } from '@/lib/request';
 import { secretsConfigured } from '@/lib/secret-box';
-import { priceOrder, readOrderRequest, totalsAgree } from '@/lib/tradeline-order';
+import { orderLimitFor, priceOrder, readOrderRequest, totalsAgree } from '@/lib/tradeline-order';
 import { findEarningAffiliate, placeTradelineOrder, tradelineOrdersEnabled } from '@/lib/tradeline-order-store';
 import { allowedOrigin, publicInventory } from '@/lib/tradelines-public';
 import { listTradelines } from '@/lib/tradelines-store';
@@ -15,8 +15,8 @@ import { listTradelines } from '@/lib/tradelines-store';
  *
  * The one route that takes an SSN from somebody who is not signed in, so it
  * is strict in a particular order: it will not take one at all unless it can
- * seal it, it limits how often one address may try, and it reads and checks
- * everything (lib/tradeline-order) before it looks anything up.
+ * seal it, it reads and checks everything (lib/tradeline-order) before it
+ * looks anything up, and it limits how often one address may place one.
  *
  * It never trusts a price. The request says which tradelines and how many,
  * and what total the customer was shown. The lines are priced here from the
@@ -61,11 +61,6 @@ export async function POST(request: Request) {
   // No key to seal with, or nowhere to save: say so before reading a word of it.
   if (!secretsConfigured() || !tradelineOrdersEnabled()) return answer({ error: UNAVAILABLE }, 503);
 
-  const limit = rateLimit(`tradeline-order:${clientIp(request) || 'shared'}`, { limit: 5, windowMs: 10 * 60_000 });
-  if (!limit.ok) {
-    return answer({ error: 'That is a lot of orders in a short time. Wait a few minutes and try again, or call us.' }, 429);
-  }
-
   let body: unknown;
   try {
     const raw = await request.text();
@@ -78,6 +73,13 @@ export async function POST(request: Request) {
   const read = readOrderRequest(body, new Date().toISOString().slice(0, 10));
   if (!read.ok) return answer({ error: 'Please check the highlighted details.', fields: read.fields }, 422);
   const order = read.request;
+
+  // Counted here, once the request is one that could become an order, so a
+  // customer correcting a mistyped field is not using up their tries.
+  const { key, limit, windowMs } = orderLimitFor(clientIp(request));
+  if (!rateLimit(key, { limit, windowMs }).ok) {
+    return answer({ error: 'That is a lot of orders in a short time. Wait a few minutes and try again, or call us.' }, 429);
+  }
 
   // Not a person. Answer as if it worked, and save nothing.
   if (order.trap) return answer({ orderNumber: 'LGF-000000', total: order.expectedTotal }, 201);
@@ -110,17 +112,21 @@ export async function POST(request: Request) {
       affiliateUserId: affiliate?.userId ?? null,
     });
 
-    // The order stands whether or not the email goes.
+    /*
+     * The confirmation, sent once the customer has their answer. The order is
+     * saved by now, and holding the answer while a mail provider thinks is how
+     * a saved order comes to look like a failed one: the request times out,
+     * the customer is told it did not go through, and they place it again.
+     */
     if (emailConfigured()) {
-      await sendEmail(
-        tradelineOrderEmail({
-          to: order.customer.email,
-          name: order.customer.name,
-          orderNumber,
-          items: priced.items,
-          total: priced.total,
-        }),
-      ).catch(() => undefined);
+      const message = tradelineOrderEmail({
+        to: order.customer.email,
+        name: order.customer.name,
+        orderNumber,
+        items: priced.items,
+        total: priced.total,
+      });
+      after(() => sendEmail(message).then(() => undefined, () => undefined));
     }
 
     return answer({ orderNumber, total: priced.total }, 201);

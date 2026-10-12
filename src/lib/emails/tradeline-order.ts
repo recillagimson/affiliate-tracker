@@ -33,8 +33,15 @@ export function tradelineOrderEmail(input: {
   items: { name: string; quantity: number; lineTotal: number }[];
   total: number;
 }): Message {
-  // Letters only, so a name typed with markup in it greets them plainly.
-  const first = (input.name.trim().split(/\s+/)[0] ?? '').replace(/[^\p{L}\p{M}'.-]/gu, '') || 'there';
+  /*
+   * Their first name, if it reads as one. This goes to whatever address a
+   * stranger typed, under our name, so it must not be a way to put words of
+   * their choosing at the top of our email: letters only, a sensible length,
+   * and no dots, which is what makes "www.something.com" a link in a mail
+   * client. Anything else is greeted plainly.
+   */
+  const given = (input.name.trim().split(/\s+/)[0] ?? '').replace(/[^\p{L}\p{M}'-]/gu, '');
+  const first = given.length >= 1 && given.length <= 30 && !(input.name.trim().split(/\s+/)[0] ?? '').includes('.') ? given : 'there';
   const lines = input.items.map((item) => ({
     name: item.name,
     months: `${item.quantity * 3} months`,

@@ -40,6 +40,10 @@ check('it says the order is not paid for yet', /awaiting payment/i.test(message.
 check('it says how to reach us', message.text.includes('+1 (518) 671-8758'));
 check('nothing they typed is let through as markup', !(message.html ?? '').includes('<b>Testcase') && !(message.html ?? '').includes('<script>'));
 check('it has a text part and an html part', message.text.length > 100 && (message.html ?? '').length > 100);
+const greet = (name: string) => tradelineOrderEmail({ to: 'x@example.com', name, orderNumber: 'LGF-204871', items: [], total: 0 }).text.split('\n')[0];
+check('a name that is really a web address is not greeted by it', greet('www.evil-site.com Smith') === 'Hi there,', greet('www.evil-site.com Smith'));
+check('nor is a very long one', greet(`${'a'.repeat(40)} Smith`) === 'Hi there,');
+check('an ordinary name with a hyphen or an apostrophe still is', greet("Mary-Jane O'Neil") === 'Hi Mary-Jane,' && greet("D'Arcy Example") === "Hi D'Arcy,");
 check('no em or en dash anywhere', !/[–—]/.test(both));
 
 console.log(`\ntradeline-order-email: ${pass} passed, ${fail} failed`);

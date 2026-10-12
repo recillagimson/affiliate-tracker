@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import {
   customerProblems,
   MAX_ORDER_LINES,
+  orderLimitFor,
   priceOrder,
   readOrderRequest,
   tidyCustomer,
@@ -149,6 +150,11 @@ const gone = priceOrder([{ id: '64', quantity: 1 }, { id: '999', quantity: 1 }, 
 check('a tradeline no longer on offer stops the order, and is named', !gone.ok && gone.gone.join() === '999,x', gone);
 check('the total a customer saw is compared to the cent', totalsAgree(5950.3, 5950.3) && totalsAgree(2200, 2200.0) && !totalsAgree(2200, 2200.01) && !totalsAgree(1100, 2200));
 check('a total that is not a number never agrees', !totalsAgree(Number.NaN, 2200));
+
+console.log('- how often one address may try -');
+check('a known address has its own count of five', orderLimitFor('203.0.113.9').key === 'tradeline-order:203.0.113.9' && orderLimitFor('203.0.113.9').limit === 5);
+check('when the address is not known everybody shares one count, so it is a generous one', orderLimitFor('').key === 'tradeline-order:shared' && orderLimitFor('').limit >= 60);
+check('both are counted over ten minutes', orderLimitFor('').windowMs === 600000 && orderLimitFor('203.0.113.9').windowMs === 600000);
 
 console.log('- the storefront has the same examples -');
 const SITE_COPY = join(__dirname, '..', '..', '..', 'Tradeline-LGF', 'src', 'lib', 'checkout-examples.json');

@@ -21,7 +21,6 @@ import { StoreConfigError, StoreConflictError, StoreNotFoundError, StoreValidati
 import { getSupabaseClient, isSupabaseConfigured } from './store/supabase';
 import { isTradelineRef } from './tradeline-ref';
 import type { OrderCustomer, PricedItem } from './tradeline-order';
-import { isLgfEmployee } from './users';
 
 export type OrderStatus = 'awaiting_payment' | 'paid' | 'cancelled';
 
@@ -181,10 +180,20 @@ export async function findEarningAffiliate(ref: string): Promise<{ userId: strin
   if (!row || row.role !== 'affiliate' || row.active !== true) return null;
   if (!normalizeServices(row.services).includes('tradelines')) return null;
   const userId = text(row.id);
-  // If it cannot be told whether they are an employee, they are treated as one
-  // who earns: the sale is theirs either way, and an admin sees the commission.
-  const employee = await isLgfEmployee(userId).catch(() => false);
-  return { userId, earns: !employee };
+  /*
+   * Whether they are an LGF employee, who is credited and earns nothing. Asked
+   * here rather than through users.isLgfEmployee, which answers "no" when it
+   * cannot read: fine for a label, wrong for money, since the commission is
+   * fixed on the order for good. A database with no such column has no
+   * employees. Any other failure stops the order, and the customer tries
+   * again, rather than guessing either way.
+   */
+  const employee = await getSupabaseClient().from('users').select('lgf_employee').eq('id', userId).maybeSingle();
+  if (employee.error && !['42703', 'PGRST204'].includes(employee.error.code ?? '')) {
+    fail('Looking up the reference number', employee.error);
+  }
+  const isEmployee = Boolean((employee.data as { lgf_employee?: unknown } | null)?.lgf_employee);
+  return { userId, earns: !isEmployee };
 }
 
 /** Save an order and its lines, sealing the SSN and date of birth on the way. Returns the order number. */

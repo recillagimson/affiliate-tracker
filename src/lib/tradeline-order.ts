@@ -258,6 +258,21 @@ export function readOrderRequest(
   };
 }
 
+/**
+ * How often one address may place orders: the bucket it is counted in, and
+ * how many it may hold in the window.
+ *
+ * Five in ten minutes for an address that is known. When it is not (no
+ * trusted proxy header, as on a developer's machine) everybody is counted
+ * together, and five between them would let one person, or five ordinary
+ * customers, shut the checkout for the next. So that shared count is a
+ * generous one: still a ceiling, not a lock anybody can turn.
+ */
+export function orderLimitFor(ip: string): { key: string; limit: number; windowMs: number } {
+  const windowMs = 10 * 60_000;
+  return ip ? { key: `tradeline-order:${ip}`, limit: 5, windowMs } : { key: 'tradeline-order:shared', limit: 60, windowMs };
+}
+
 export type PricedItem = {
   issuer: string;
   name: string;
