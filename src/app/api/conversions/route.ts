@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
-import { announceApproval } from '@/lib/slack';
+import { announceApproval, approvalChannel } from '@/lib/slack';
 import { smsSummary, textApprovals } from '@/lib/sms';
 import { getStore, statusForError } from '@/lib/store';
+import { listNoShareKeys } from '@/lib/users';
 import { conversionInputSchema, fieldErrors } from '@/lib/validate';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
@@ -51,19 +52,27 @@ export async function POST(request: Request) {
      * The person and the card come from the link the approval was filed
      * against, the same way every screen reads them, so Slack cannot name a
      * card the dashboard does not.
+     *
+     * Which channel hears it depends on whose link it was: an affiliate's or
+     * an LGF employee's. A list that cannot be read is null, which
+     * approvalChannel sends where every approval went before.
      */
+    const noShare = await listNoShareKeys().catch(() => null);
     const links = await store.listLinks().catch(() => []);
     const link = links.find((row) => row.slug === conversion.slug && row.usr === conversion.usr);
-    await announceApproval({
-      person: link?.assignee ?? '',
-      campaign: link?.campaign || link?.slug || '',
-      // Which card was approved is not asked for here, so the campaign stands
-      // for it, as it does everywhere else this approval is read.
-      card: '',
-      client: '',
-      approvedOn: conversion.approvedOn,
-      source: 'manual',
-    });
+    await announceApproval(
+      {
+        person: link?.assignee ?? '',
+        campaign: link?.campaign || link?.slug || '',
+        // Which card was approved is not asked for here, so the campaign stands
+        // for it, as it does everywhere else this approval is read.
+        card: '',
+        client: '',
+        approvedOn: conversion.approvedOn,
+        source: 'manual',
+      },
+      approvalChannel(conversion.usr, noShare),
+    );
 
     // And the affiliate, by text, for the same reasons and on the same terms:
     // after the money, and unable to throw. See lib/sms.

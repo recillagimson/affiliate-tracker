@@ -12,9 +12,10 @@ import {
 } from '@/lib/qmp-sync';
 import { clientIndex, nameIndex, UNKNOWN_CLIENT } from '@/lib/analytics';
 import { listCommittedConversionIds, payoutsEnabled } from '@/lib/payout-request-store';
-import { announceSync } from '@/lib/slack';
+import { announceSync, approvalChannel } from '@/lib/slack';
 import { smsSummary, textApprovals } from '@/lib/sms';
 import { getStore, statusForError, StoreNotFoundError } from '@/lib/store';
+import { listNoShareKeys } from '@/lib/users';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
 /**
@@ -273,7 +274,11 @@ export async function POST(request: Request) {
    * It cannot throw (see lib/slack) and it cannot change what was recorded —
    * by this point everything is on file either way. A refusal is reported
    * beside the run's own failures rather than instead of them.
+   *
+   * Affiliates' approvals and LGF employees' go to a channel each; see
+   * approvalChannel for what a list that cannot be read does.
    */
+  const noShare = await listNoShareKeys().catch(() => null);
   const names = nameIndex(links);
   const clients = clientIndex(submissions);
   const slackProblem = await announceSync(
@@ -285,6 +290,7 @@ export async function POST(request: Request) {
       client: clients.get(row.leadRef) === UNKNOWN_CLIENT ? '' : (clients.get(row.leadRef) ?? ''),
       approvedOn: row.approvedOn,
       source: 'sync' as const,
+      channel: approvalChannel(row.usr, noShare),
     })),
     leads.written.registered,
   );
