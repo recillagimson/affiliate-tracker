@@ -4,7 +4,7 @@ import { TradelinesBrowser } from '@/components/TradelinesTable';
 import { TradelinesSummaryPanel } from '@/components/TradelinesSummary';
 import { issuerFrom, type Tradeline } from '@/lib/tradelines';
 import { tradelineLinkFor } from '@/lib/tradeline-ref';
-import { tradelineSummaryFor } from '@/lib/tradeline-sales';
+import { NO_TRADELINE_SALES, tradelineSalesFor } from '@/lib/tradeline-sales';
 import { listTradelines, tradelinesEnabled } from '@/lib/tradelines-store';
 import { readUserTradelineRef } from '@/lib/users';
 import { requireService } from '@/lib/viewer';
@@ -68,12 +68,14 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
   const today = new Date().toISOString().slice(0, 10);
 
   // An affiliate's own link and figures, above the tables. Not for an admin,
-  // who keeps the table and has no reference number of their own.
+  // who keeps the table and has no reference number of their own. If their
+  // orders cannot be read they are shown noughts rather than no page.
   const mine =
     viewer.role === 'affiliate' && viewer.id
-      ? await readUserTradelineRef(viewer.id)
-          .catch(() => '')
-          .then(async (tradelineRef) => ({ tradelineRef, summary: await tradelineSummaryFor(tradelineRef) }))
+      ? {
+          tradelineRef: await readUserTradelineRef(viewer.id).catch(() => ''),
+          summary: (await tradelineSalesFor(viewer.id).catch(() => null))?.summary ?? { ...NO_TRADELINE_SALES },
+        }
       : null;
 
   return (

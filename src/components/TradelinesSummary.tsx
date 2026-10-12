@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { CopyButton } from '@/components/CopyButton';
 import { EmptyState } from '@/components/EmptyState';
-import type { TradelineSummary } from '@/lib/tradeline-sales';
+import { formatDateTime } from '@/lib/analytics';
+import type { AffiliateOrderRow, TradelineSummary } from '@/lib/tradeline-sales';
 import { formatPrice } from '@/lib/tradelines';
 
 /**
@@ -111,17 +112,61 @@ export function TradelinesSummaryPanel({
   );
 }
 
+const STATUS_LABEL = { awaiting_payment: 'Awaiting payment', paid: 'Paid', cancelled: 'Cancelled' } as const;
+const STATUS_CHIP = {
+  awaiting_payment: 'chip chip-quiet',
+  paid: 'chip chip-gold',
+  cancelled: 'chip border-alarm-edge bg-alarm-wash text-alarm',
+} as const;
+
 /**
  * Every checkout made with an affiliate's reference number.
  *
- * Nothing but the empty case for now: there is no checkout to have made any.
+ * What they sold, to whom, what it came to and what it earns them. The
+ * customer is a name and nothing more: the rows (lib/tradeline-sales,
+ * affiliateRows) are not handed anything else about them.
  */
-export function TradelineCheckouts({ summary }: { summary: TradelineSummary }) {
-  if (summary.checkouts > 0) return null;
+export function TradelineCheckouts({ rows }: { rows: AffiliateOrderRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        title="No checkouts yet"
+        body="Tradelines sold with your reference number will be listed here, with what each one earned you."
+      />
+    );
+  }
   return (
-    <EmptyState
-      title="No checkouts yet"
-      body="Tradelines sold with your reference number will be listed here, with what each one earned you."
-    />
+    <ul className="panel divide-y divide-edge overflow-hidden">
+      {rows.map((row) => (
+        <li key={row.orderNumber} className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 px-5 py-4">
+          <div className="min-w-0">
+            <p className="flex flex-wrap items-center gap-2 text-[14px] font-medium text-ink">
+              {row.customerName}
+              <span className={STATUS_CHIP[row.status]}>{STATUS_LABEL[row.status]}</span>
+            </p>
+            <p className="tnum mt-0.5 text-[12px] text-ink-dim">
+              {row.orderNumber}, {formatDateTime(row.placedAt)}
+            </p>
+            <ul className="mt-2 text-[13px] text-ink-soft">
+              {row.items.map((item, index) => (
+                <li key={index}>
+                  {item.name}, {item.quantity * 3} months
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="text-right">
+            <p className="tnum text-[15px] font-medium text-ink">
+              {row.status === 'cancelled'
+                ? 'No commission'
+                : row.status === 'paid'
+                  ? formatPrice(row.commission)
+                  : `${formatPrice(row.commission)} when paid`}
+            </p>
+            <p className="tnum mt-0.5 text-[12px] text-ink-dim">Order total {formatPrice(row.total)}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

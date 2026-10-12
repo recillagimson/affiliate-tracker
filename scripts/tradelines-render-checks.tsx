@@ -149,8 +149,24 @@ check('and is what gets copied', linked.includes('Copy your link'));
 check('their number is still said', linked.includes('TL-48213'));
 const earned = render(<TradelineFigures summary={{ income: 1250.5, pendingPayout: 450, checkouts: 3 }} />);
 check('figures are to the cent', earned.includes('$1,250.50') && earned.includes('$450.00'));
-const list = render(<TradelineCheckouts summary={NONE} />);
+const list = render(<TradelineCheckouts rows={[]} />);
 check('with no checkouts the list says so', list.includes('No checkouts yet') && list.includes('reference number'));
+const sold = render(
+  <TradelineCheckouts
+    rows={[
+      { orderNumber: 'LGF-100002', placedAt: '2026-10-12T12:00:00Z', customerName: 'Jordan <i>Testcase</i>', status: 'paid', total: 3300, commission: 400, items: [{ name: 'Capital One/Cabelas', quantity: 2 }, { name: 'Capital One Walmart', quantity: 1 }] },
+      { orderNumber: 'LGF-100001', placedAt: '2026-10-11T12:00:00Z', customerName: 'Sam Example', status: 'awaiting_payment', total: 1100, commission: 200, items: [{ name: 'Citi Plus', quantity: 1 }] },
+      { orderNumber: 'LGF-100004', placedAt: '2026-10-10T12:00:00Z', customerName: 'Alex Example', status: 'cancelled', total: 1100, commission: 0, items: [{ name: 'Citi Plus', quantity: 1 }] },
+    ]}
+  />,
+);
+check('each checkout is listed with its order number and customer', ['LGF-100002', 'LGF-100001', 'LGF-100004', 'Sam Example'].every((part) => sold.includes(part)));
+check('a customer name is text, never markup', !sold.includes('<i>Testcase') && sold.includes('&lt;i&gt;'));
+check('what was bought is said, with its months', sold.includes('Capital One/Cabelas') && sold.includes('6 months') && sold.includes('Capital One Walmart'));
+check('a paid one shows what it earned', sold.includes('$400.00') && sold.includes('Paid'));
+check('one awaiting payment says the commission is to come', sold.includes('$200.00 when paid') && sold.includes('Awaiting payment'));
+check('a cancelled one earns nothing', sold.includes('Cancelled') && !sold.includes('$0.00 when paid'));
+check('the order totals are shown', sold.includes('$3,300.00') && sold.includes('$1,100.00'));
 
 console.log('- what a paste will do -');
 const good = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\t10.48493151\t$425\nCiti B\t$2,000\t20-Jan-16\n', TODAY)} />);
