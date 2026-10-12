@@ -196,6 +196,12 @@ export const config = {
     '/tradelines/:path*',
     '/api/tradelines',
     '/api/tradelines/:path*',
+    // What an admin does to a tradeline order, including reading an SSN back.
+    // The route checks for an admin itself; listed here so a signed-out
+    // request never reaches it. /api/public/tradeline-orders, where the
+    // storefront places an order, is deliberately not listed.
+    '/api/tradeline-orders',
+    '/api/tradeline-orders/:path*',
     // Support tickets. A conversation between one affiliate and the admins,
     // with screenshots, so a signed-out request must not reach the pages, the
     // route behind them or the image route, even to be told no.

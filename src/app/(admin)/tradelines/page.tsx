@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { TradelinesBrowser } from '@/components/TradelinesTable';
 import { TradelinesSummaryPanel } from '@/components/TradelinesSummary';
@@ -86,6 +87,13 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
           The tradelines on offer, by issuer. Choose an issuer to see its table. Ages are shown exactly as they were
           pasted or entered.
         </p>
+        {canEdit ? (
+          <p className="mt-3">
+            <Link href="/tradelines/orders" className="btn-outline btn-sm">
+              View orders
+            </Link>
+          </p>
+        ) : null}
       </div>
 
       {mine ? (
