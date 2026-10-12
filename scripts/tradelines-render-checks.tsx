@@ -167,6 +167,10 @@ check('a paid one shows what it earned', sold.includes('$400.00') && sold.includ
 check('one awaiting payment says the commission is to come', sold.includes('$200.00 when paid') && sold.includes('Awaiting payment'));
 check('a cancelled one earns nothing', sold.includes('Cancelled') && !sold.includes('$0.00 when paid'));
 check('the order totals are shown', sold.includes('$3,300.00') && sold.includes('$1,100.00'));
+const unpaidNoShare = render(
+  <TradelineCheckouts rows={[{ orderNumber: 'LGF-100009', placedAt: '2026-10-12T12:00:00Z', customerName: 'Sam Example', status: 'awaiting_payment', total: 1100, commission: 0, items: [{ name: 'Citi Plus', quantity: 1 }] }]} />,
+);
+check('an order that carries no commission says so, rather than promising nought', unpaidNoShare.includes('No commission') && !unpaidNoShare.includes('$0.00'));
 
 console.log('- what a paste will do -');
 const good = render(<PastePreview result={parsePaste('Citi A\t$7,500\t3-Mar-15\t10.48493151\t$425\nCiti B\t$2,000\t20-Jan-16\n', TODAY)} />);

@@ -157,7 +157,7 @@ export function TradelineCheckouts({ rows }: { rows: AffiliateOrderRow[] }) {
           </div>
           <div className="text-right">
             <p className="tnum text-[15px] font-medium text-ink">
-              {row.status === 'cancelled'
+              {row.status === 'cancelled' || row.commission <= 0
                 ? 'No commission'
                 : row.status === 'paid'
                   ? formatPrice(row.commission)
