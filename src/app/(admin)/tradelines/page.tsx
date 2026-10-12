@@ -75,7 +75,7 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
     viewer.role === 'affiliate' && viewer.id
       ? {
           tradelineRef: await readUserTradelineRef(viewer.id).catch(() => ''),
-          summary: (await tradelineSalesFor(viewer.id).catch(() => null))?.summary ?? { ...NO_TRADELINE_SALES },
+          sales: (await tradelineSalesFor(viewer.id).catch(() => null)) ?? { summary: { ...NO_TRADELINE_SALES }, rows: [] },
         }
       : null;
 
@@ -100,7 +100,8 @@ export default async function TradelinesPage({ searchParams }: PageProps) {
         <TradelinesSummaryPanel
           tradelineRef={mine.tradelineRef}
           link={tradelineLinkFor(process.env.TRADELINES_SITE_URL, mine.tradelineRef)}
-          summary={mine.summary}
+          summary={mine.sales.summary}
+          rows={mine.sales.rows}
         />
       ) : null}
 

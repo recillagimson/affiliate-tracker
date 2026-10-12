@@ -62,11 +62,14 @@ export function TradelinesSummaryPanel({
   tradelineRef,
   link = '',
   summary,
+  rows = [],
 }: {
   tradelineRef: string;
   /** Their storefront link, or '' while the storefront has no address. */
   link?: string;
   summary: TradelineSummary;
+  /** Their checkouts, newest first. The latest few are shown here; all of them are behind "View all". */
+  rows?: AffiliateOrderRow[];
 }) {
   return (
     <section className="rise panel mt-5 overflow-hidden">
@@ -103,9 +106,22 @@ export function TradelinesSummaryPanel({
 
       <TradelineFigures summary={summary} />
 
+      {/*
+        The latest checkouts, here and not only behind "View all". A sale that
+        has not been paid for yet moves neither figure above, and one that
+        earns no commission never will, so without this somebody who has just
+        made a sale is looking at two noughts and no sign of it.
+      */}
+      {rows.length > 0 ? (
+        <div className="border-t border-edge">
+          <h3 className="label-cap px-5 pt-4 text-[10px]">Recent checkouts</h3>
+          <TradelineCheckouts rows={rows.slice(0, 3)} bare />
+        </div>
+      ) : null}
+
       <div className="flex justify-end border-t border-edge px-5 py-3">
         <Link href="/tradelines/dashboard" className="btn-outline btn-sm">
-          View all
+          {rows.length > 0 ? `View all ${rows.length} ${rows.length === 1 ? 'checkout' : 'checkouts'}` : 'View all'}
         </Link>
       </div>
     </section>
@@ -126,7 +142,7 @@ const STATUS_CHIP = {
  * customer is a name and nothing more: the rows (lib/tradeline-sales,
  * affiliateRows) are not handed anything else about them.
  */
-export function TradelineCheckouts({ rows }: { rows: AffiliateOrderRow[] }) {
+export function TradelineCheckouts({ rows, bare = false }: { rows: AffiliateOrderRow[]; bare?: boolean }) {
   if (rows.length === 0) {
     return (
       <EmptyState
@@ -136,7 +152,8 @@ export function TradelineCheckouts({ rows }: { rows: AffiliateOrderRow[] }) {
     );
   }
   return (
-    <ul className="panel divide-y divide-edge overflow-hidden">
+    // `bare` is for a list that sits inside a panel already and should not draw one of its own.
+    <ul className={bare ? 'divide-y divide-edge' : 'panel divide-y divide-edge overflow-hidden'}>
       {rows.map((row) => (
         <li key={row.orderNumber} className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 px-5 py-4">
           <div className="min-w-0">

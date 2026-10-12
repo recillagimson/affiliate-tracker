@@ -167,6 +167,15 @@ check('a paid one shows what it earned', sold.includes('$400.00') && sold.includ
 check('one awaiting payment says the commission is to come', sold.includes('$200.00 when paid') && sold.includes('Awaiting payment'));
 check('a cancelled one earns nothing', sold.includes('Cancelled') && !sold.includes('$0.00 when paid'));
 check('the order totals are shown', sold.includes('$3,300.00') && sold.includes('$1,100.00'));
+const ROWS = [1, 2, 3, 4].map((n) => ({ orderNumber: `LGF-20000${n}`, placedAt: `2026-10-1${n}T12:00:00Z`, customerName: `Customer ${n}`, status: 'awaiting_payment' as const, total: 1100, commission: 0, items: [{ name: 'Citi Plus', quantity: 1 }] }));
+const withOrders = render(<TradelinesSummaryPanel tradelineRef="TL-48213" summary={{ income: 0, pendingPayout: 0, checkouts: 4 }} rows={ROWS} />);
+check('the panel shows their latest checkouts, so a sale is seen without going looking', withOrders.includes('Recent checkouts') && withOrders.includes('LGF-200001') && withOrders.includes('Customer 3'));
+check('three of them, the rest being behind view all', !withOrders.includes('LGF-200004'));
+check('and view all says how many there are', /href="\/tradelines\/dashboard"[^>]*>[^<]*View all 4 checkouts/.test(withOrders), withOrders.slice(-400));
+check('even when they have earned nothing yet', withOrders.includes('$0.00') && withOrders.includes('Awaiting payment'));
+const oneOrder = render(<TradelinesSummaryPanel tradelineRef="TL-48213" summary={{ income: 0, pendingPayout: 0, checkouts: 1 }} rows={ROWS.slice(0, 1)} />);
+check('one is one checkout', oneOrder.includes('View all 1 checkout<') || /View all 1 checkout\s*</.test(oneOrder));
+check('with none, the panel is as it was', !panel.includes('Recent checkouts') && /href="\/tradelines\/dashboard"[^>]*>[^<]*View all\s*</.test(panel));
 const unpaidNoShare = render(
   <TradelineCheckouts rows={[{ orderNumber: 'LGF-100009', placedAt: '2026-10-12T12:00:00Z', customerName: 'Sam Example', status: 'awaiting_payment', total: 1100, commission: 0, items: [{ name: 'Citi Plus', quantity: 1 }] }]} />,
 );
